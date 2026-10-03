@@ -1,0 +1,25 @@
+name: build-go-binary
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-go-binary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: for f in js/*.js; do node --check "$f"; done
+      - uses: wangyoucao577/go-release-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          goos: windows
+          goarch: amd64
+          pre_command: go run ./internal/genicon amd64
+          goversion: https://go.dev/dl/go1.27.1.linux-amd64.tar.gz
+          ldflags: -H=windowsgui -X main.Version=${{ github.ref_name }}
+          md5sum: false
+          compress_assets: OFF
