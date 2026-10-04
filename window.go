@@ -344,6 +344,18 @@ func shellOpen(target string) {
 	}
 }
 
+// SetTitle writes the window's title.
+//
+// SetWindowTextW 本身是线程安全的——它只往窗口上写一段字，不碰 WebView2 的控制器——所以这里不像
+// Eval 那样必须回到窗口线程：从哪个 goroutine 调都行。标题栏上那行版本号就是这么来的（见
+// main.go 的 setTitle，它在后台问完上游之后补写标题）。
+func (win *webviewWindow) SetTitle(title string) {
+	if win == nil || win.w == nil {
+		return
+	}
+	win.w.SetTitle(title)
+}
+
 // Show brings the window up, restoring it if it was minimised. It is called from a
 // menu callback, which runs on its own goroutine, so it goes through Dispatch:
 // WebView2's controller belongs to the thread running the loop.

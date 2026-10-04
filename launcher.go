@@ -195,31 +195,6 @@ func sourceReady() bool {
 	return true
 }
 
-// readGameVersion reads the version out of a game directory's package.json, or "?" when there is
-// nothing readable there.
-//
-// It is for the log, and it earns its place the first time somebody presses 更新游戏: without a
-// before and an after written down, "did that do anything" has no answer. Nothing decides anything
-// on this: an unreadable file is a question mark, not an error.
-func readGameVersion(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "package.json"))
-	if err != nil {
-		return "?"
-	}
-	var pkg struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(data, &pkg); err != nil || pkg.Version == "" {
-		return "?"
-	}
-	return pkg.Version
-}
-
-// gameVersion is that, for the game this program installed.
-func gameVersion() string {
-	return readGameVersion(gameDir())
-}
-
 // setupNeeded is the cheap version of what tools/setup.mjs --check decides: are the things a run
 // needs already there?
 //
@@ -248,7 +223,18 @@ func setupNeeded() bool {
 // makes an update cheap - node_modules and the downloaded art stay where they are - and it is
 // also why the game directory is never wiped.
 func fetchSource() error {
-	slog.Info("fetching the game source", "url", sourceURL)
+	// 先问清这次取的是哪一版，再下归档。顺序是有意的：等归档下完再问，拿到的可能是另一个 commit
+	// 的 hash——master 在这几分钟里动了的话，记下来的就对不上刚解包的那份代码了。
+	//
+	// 问不到也不拦：源码该取还得取，只是这一份的 hash 记不下来（标题栏于是不写 hash）。
+	revision := ""
+	if hash, err := upstreamRevision(); err != nil {
+		slog.Warn("game source revision: cannot ask which commit this is", "error", err)
+	} else {
+		revision = hash
+	}
+
+	slog.Info("fetching the game source", "url", sourceURL, "revision", shortHash(revision))
 	client := &http.Client{Timeout: 15 * time.Minute}
 	resp, err := client.Get(sourceURL)
 	if err != nil {
@@ -262,7 +248,13 @@ func fetchSource() error {
 	if err != nil {
 		return err
 	}
-	slog.Info("game source unpacked", "dir", gameDir(), "files", files)
+	// 归档已经解开了，才把 hash 记下来：记的是"磁盘上这一份代码来自哪个 commit"。
+	if revision != "" {
+		if err := saveRevision(revision); err != nil {
+			slog.Warn("game source revision: cannot record it", "error", err)
+		}
+	}
+	slog.Info("game source unpacked", "dir", gameDir(), "files", files, "revision", shortHash(revision))
 	return nil
 }
 
@@ -512,6 +504,12 @@ func prepareFiles(node string, forceSetup bool) string {
 			return setupFailedPage()
 		}
 	}
+	// 源码已经在磁盘上、这一轮没有重新取的场合（绝大多数启动都是这样），也把"这是哪一版"记下来。
+	//
+	// 没有这一句，本机的 hash 就只可能来自"取源码"那一次：装过一次之后再也不重新取，而这个记录
+	// 又是在那之后才加进来的安装，就会永远读不到本机 hash——标题栏上那一半永远是空的。这正是
+	// 这一版第一次上线时的样子。
+	recordRevision()
 	return ""
 }
 
@@ -540,7 +538,7 @@ func updateGame() error {
 	}
 	defer release()
 
-	before := gameVersion()
+	before := localRevision()
 	if err := fetchSource(); err != nil {
 		return err
 	}
@@ -555,8 +553,48 @@ func updateGame() error {
 			return err
 		}
 	}
-	slog.Info("game source updated", "from", before, "to", gameVersion())
+	slog.Info("game source updated", "from", shortHash(before), "to", shortHash(localRevision()))
 	return nil
+}
+
+// recordRevision writes down which commit the source on disk came from.
+//
+// 它答的是"这份代码是哪一版"，而本机没有任何 git 元数据可读（源码是 tar.gz 解包的），所以只能问
+// 上游要当前那个 commit。它因此有一处诚实的局限，写在日志里而不写在标题栏上：源码如果能重新取，
+// 记的是确切的；如果只是"原来就在磁盘上"，记的是**此刻上游的位置**——两者只有在磁盘那一份没有
+// 落后于上游时才是同一个。差别写在日志里，由读日志的人判断。
+//
+// 取不到就当没这回事：少一行显示，不该让准备游戏失败。
+func recordRevision() {
+	if localRevision() != "" {
+		return
+	}
+	hash, err := upstreamRevision()
+	if err != nil {
+		slog.Warn("game source revision: cannot tell which commit this is", "error", err)
+		return
+	}
+	if err := saveRevision(hash); err != nil {
+		slog.Warn("game source revision: cannot record it", "error", err)
+		return
+	}
+	slog.Info("game source revision recorded", "revision", shortHash(hash), "gameVersion", gameVersionNote())
+}
+
+// gameVersionNote 只是留给日志的一句话：这一份源码自己报的版本号（game\package.json 里的
+// version）。它不参与任何判断——判断用的是 commit。
+func gameVersionNote() string {
+	data, err := os.ReadFile(filepath.Join(gameDir(), "package.json"))
+	if err != nil {
+		return "?"
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil || pkg.Version == "" {
+		return "?"
+	}
+	return pkg.Version
 }
 
 // prepareGame brings the game up, and reports what the window should say when it cannot. An empty

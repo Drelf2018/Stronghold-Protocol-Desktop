@@ -23,15 +23,20 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Drelf2018/Stronghold-Protocol-Desktop/internal/artwork"
 	"github.com/Drelf2018/systray"
 	"golang.org/x/sys/windows"
 )
 
-// The app names itself twice, and the two are not interchangeable.
+// 这个程序给自己两个名字，而它们的区别不是随手起的：**进程**是启动器，**窗口**是游戏。
 //
-// appName is what a person reads: the window title, the tray tooltip, the caption of an error box.
+// appName 是窗口的名字。窗口里装的是游戏："正在准备「卫戍协议：盟约」"、"游戏服务没能启动"——那
+// 些话说的都是游戏，窗口也就是游戏。所以标题栏写游戏名，启动完之后它是什么，就写什么。
+//
+// launcherName 是那个 exe 的名字。报错弹窗是这个程序没能起来（窗口还没有呢），托盘里躺着的是这个
+// 程序（它启动完也还在），所以那两处说的是启动器——那三个字在那里不是多余的。
 //
 // appID is what a machine reads, and what the app is filed under: the folder under %LOCALAPPDATA%
 // (which also holds the game's own source), and the name of the startup entry. It is ASCII,
@@ -39,8 +44,12 @@ import (
 // profile and downloaded game are left behind under the old name. Do not
 // derive it from appName.
 const (
-	appName = "卫戍协议：盟约 启动器"
-	appID   = "stronghold-protocol-launcher"
+	appName = "卫戍协议：盟约"
+
+	// launcherName 是 exe 自己的名字，用在它的两个"身份"场合：起不来时的报错弹窗，以及托盘的
+	// 悬停提示。窗口标题用的是 appName——那扇窗里装的是游戏。
+	launcherName = "卫戍协议：盟约 启动器"
+	appID        = "stronghold-protocol-launcher"
 )
 
 // Version is the build's version, and the one thing in this program the linker rewrites: the
@@ -120,7 +129,7 @@ func createWindow(state windowState) (w *webviewWindow) {
 }
 
 func showError(cause string) error {
-	title, err := windows.UTF16PtrFromString(appName)
+	title, err := windows.UTF16PtrFromString(launcherName)
 	if err != nil {
 		return err
 	}
@@ -214,6 +223,88 @@ func showNotice(page string) {
 	}
 	slog.Info("showing a page of our own", "page", page[:min(len(page), 48)])
 	win.Dispatch(win.Navigate, page)
+}
+
+// 标题栏那两半 hash。本机那一半是"磁盘上这份代码来自哪个 commit"（取源码时记下的，见
+// upstream.go），上游那一半要问一次网络。
+//
+// 两个 goroutine 会碰它们：问上游的那条写，画标题的那条读。单个写者听上去够用，但"够用"不是一个
+// 值得依赖的性质——race detector 会盯上它，而 Load/Store 在这里是零代价的。
+var (
+	localRevisionHash  atomic.Value // string
+	upstreamRevisionID atomic.Value // string
+	// upstreamKnown 记的是"上游那个 hash 到底问到了没有"。
+	//
+	// 少了它就会把"还没问到"和"问到了、而且不一样"当成同一件事：上游没回来时 ID 是空串，而空串按
+	// 约定不等于任何东西，于是标题会在问回来之前就先宣称"检测到新版本"，一秒后又悄悄撤掉——屏幕上
+	// 看到的就是那句一闪而过。不知道的事不该说成知道。
+	upstreamKnown atomic.Bool
+)
+
+// applyTitle writes the window title from those two hashes。
+//
+//	卫戍协议：盟约 - bdb0765
+//	卫戍协议：盟约 - bdb0765 - 检测到新版本 8f3a1c2
+//
+// 本机那份还没有时（第一次启动、归档还在下）只写程序名：写一串猜出来的字符比什么都不写更糟。
+func applyTitle() {
+	if win == nil {
+		return
+	}
+	local, _ := localRevisionHash.Load().(string)
+	remote, _ := upstreamRevisionID.Load().(string)
+	title := windowTitle(local, remote, upstreamKnown.Load())
+	slog.Info("window title", "title", title, "local", shortHash(local), "upstream", shortHash(remote),
+		"asked", upstreamKnown.Load())
+	win.SetTitle(title)
+}
+
+// windowTitle 是那行标题的唯一出处，也是这件事里唯一值得测的一段：三个输入拼出一句话。
+//
+// 拆出来是因为"标题写错了"在屏幕上的表现只是闪一下或者少一句，没有别的地方看得出来。Win32 那一
+// 步（SetTitle）留给 applyTitle，这里只管说哪句话。
+//
+//	本机 hash 还没有            → 只写程序名
+//	上游还没问到（known=false） → 只写本机那一半，**不**说新版
+//	问到了，同一版              → 只写本机那一半
+//	问到了，不同                → 添上"检测到新版本"
+//
+// 第二条是这条测试盯的坑：空串按约定"不等于"任何东西，所以少了 known 这一位，上游没回来时标题就
+// 会先宣称检测到新版本，一秒后再悄悄撤掉——屏幕上正是那句一闪而过。
+//
+// remote 也要求非空：问到了却拿到空串是理论上不该有的事，真发生时那句话会以"检测到新版本 "收尾，
+// 一个没写完的句子比不写更糟。
+func windowTitle(local, remote string, known bool) string {
+	if local == "" {
+		return appName
+	}
+	title := appName + " - " + shortHash(local)
+	if known && remote != "" && !sameRevision(local, remote) {
+		title += " - 检测到新版本 " + shortHash(remote)
+	}
+	return title
+}
+
+// startupCheck asks once which commit master is on, and completes the title with the answer.
+//
+// 它在自己的 goroutine 里跑（由 main 起）：那是一次网络请求，而窗口已经该出来了。查不到就什么都
+// 不说——一次失败的请求不是一个 commit，不该让标题栏宣称检测到新版本。
+//
+// 这一问每次启动只做一次（由 main 在第一次准备游戏走完之后起）。它不是一个更新器：知道了也不动
+// 任何文件，只是让标题栏说一句实话——上游的代码只有「更新游戏」被按下时才会真的被取回来。
+func startupCheck() {
+	hash, err := upstreamRevision()
+	if err != nil {
+		slog.Info("upstream revision: cannot ask", "error", err)
+		return
+	}
+	local, _ := localRevisionHash.Load().(string)
+	slog.Info("upstream revision", "upstream", shortHash(hash), "local", shortHash(local))
+	upstreamRevisionID.Store(hash)
+	// 先记"问到了"，再画标题：顺序反过来的话，画标题那一句可能读到旧的 false，于是有一次标题少写
+	// 那句"检测到新版本"。
+	upstreamKnown.Store(true)
+	applyTitle()
 }
 
 // openStartup points the window at the address this run opens: the one the last run was left on
@@ -390,6 +481,11 @@ func main() {
 	// 提示页上那块输出区域的数据那一路：缓冲区在 setupLogging 里就接上了，这里只是开始推。
 	attachLogPanel(win)
 
+	// 标题栏：先写上磁盘上这一份的 hash——取源码时记下来的，读文件就有——上游那一半留给下面的
+	// startupCheck，那是网络，不该挡着窗口出来。
+	localRevisionHash.Store(localRevision())
+	applyTitle()
+
 	// 页面里的全屏按钮走标准 Fullscreen API，而那只让页面填满控件：要让窗口自己变
 	if err := win.Bind("_fullscreen", func(on bool) { win.fullScreen(on) }); err != nil {
 		slog.Warn("binding _fullscreen", "error", err)
@@ -409,7 +505,14 @@ func main() {
 	} else {
 		showNotice(preparingPage())
 		go func() {
-			if page := prepareGame(false); page != "" {
+			page := prepareGame(false)
+			// 第一次启动时上面那一次 applyTitle 还写不出 hash（游戏正被下下来，那个小文件也还没
+			// 写）。等源码落地了再写一次，然后把上游那一问发出去——它要等本机这份 hash 有了才有
+			// 意义，早了只能比出"不知道"。
+			localRevisionHash.Store(localRevision())
+			applyTitle()
+			go startupCheck()
+			if page != "" {
 				showNotice(page)
 			} else {
 				showGame()
@@ -419,7 +522,7 @@ func main() {
 
 	onReady := func() {
 		systray.SetIcon(icon)
-		systray.SetTooltip(appName)
+		systray.SetTooltip(launcherName)
 		systray.SetOnLeftClick(win.Show)
 		addMenuItems()
 	}

@@ -160,33 +160,6 @@ func TestJoinURL(t *testing.T) {
 	}
 }
 
-func TestReadGameVersion(t *testing.T) {
-	dir := t.TempDir()
-	write := func(body string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(body), 0o644); err != nil {
-			t.Fatalf("write package.json: %v", err)
-		}
-	}
-
-	// 更新游戏只靠这一行知道"到底更没更"，所以三种读不出来的情况都必须是 "?"，而不是空串或崩掉。
-	if got := readGameVersion(dir); got != "?" {
-		t.Errorf("no package.json yet: %q, want %q", got, "?")
-	}
-	write("{\"version\":\"0.1.1\"}")
-	if got := readGameVersion(dir); got != "0.1.1" {
-		t.Errorf("readGameVersion = %q, want %q", got, "0.1.1")
-	}
-	write("{not json")
-	if got := readGameVersion(dir); got != "?" {
-		t.Errorf("unparsable: %q, want %q", got, "?")
-	}
-	write("{\"name\":\"x\"}")
-	if got := readGameVersion(dir); got != "?" {
-		t.Errorf("no version field: %q, want %q", got, "?")
-	}
-}
-
 // tarball builds the smallest archive that has the shape this reads: one top-level folder, files
 // under it, and one name that tries to climb out of it.
 func tarball(t *testing.T, files map[string]string) []byte {
