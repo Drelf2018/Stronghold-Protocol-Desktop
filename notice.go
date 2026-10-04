@@ -23,40 +23,29 @@ import (
 
 const (
 	preparingTitle = "正在准备「卫戍协议：盟约」"
-	preparingBody  = "第一次启动要先取回游戏源码、安装依赖，并下载美术与音频素材（约 250 MB）。\n\n" +
-		"这一步只走一次，中途断了也没关系：下次启动会从中断的地方继续。\n" +
-		"进度都写在日志里："
+	preparingBody  = "第一次启动或者更新时要先取回游戏源码、安装依赖，并下载美术与音频素材。"
 
 	nodeTitle = "需要 Node.js 22 或更高版本"
 	nodeBody  = "游戏服务由 Node.js 运行，而这台机器上找不到合格的 node。\n\n" +
-		"装一个（任选一种）：\n" +
-		"  winget install OpenJS.NodeJS.LTS\n" +
-		"  https://nodejs.org/zh-cn/download\n\n" +
-		"装好之后重新启动本程序——PATH 要新开一个进程才读得到。"
+		"任选一种方式进行安装，之后重新启动本程序。"
 
 	sourceTitle = "无法获取游戏源码"
 	sourceBody  = "没能从 GitHub 下载「卫戍协议：盟约」的源码。\n\n" +
-		"请检查网络或代理，然后重新启动本程序。已经下过的部分不用重来，\n" +
-		"失败的原因写在日志里："
+		"请检查网络或代理，然后重新启动本程序。\n\n查看日志："
 
 	updateTitle = "游戏没能更新"
 	updateBody  = "取回新源码、清理旧的依赖或刷新上游索引时出错了。\n\n" +
-		"常见的是两件事：网络或代理取不回新源码；或者旧的 node_modules 删不掉\n" +
-		"（还有 node 进程占着它）。再按一次会重试，已经写进去的文件会被覆盖。\n" +
-		"出错的原因写在日志里："
+		"网络或代理连接失败，或者 node_modules 删除失败。\n\n查看日志："
 
 	setupTitle = "游戏文件没有准备完"
 	setupBody  = "安装依赖或下载素材时出错了。\n\n" +
-		"修好网络之后，从托盘菜单选「重新准备游戏文件」就能接着来\n" +
-		"（已经下载的部分不会重来）。出错的原因写在日志里："
+		"从托盘菜单选「重新准备游戏文件」重新尝试。\n\n查看日志："
 
-	startTitle = "游戏服务没能启动"
-	startBody  = "服务进程起来了，但一直没有在 3000 端口上回应。\n\n" +
-		"原因写在日志里："
+	startTitle = "游戏服务进程未回应"
+	startBody  = "查看日志："
 
 	portTitle = "端口 3000 已经被占用"
-	portBody  = "3000 端口上已经有别的程序在监听，游戏服务起不来。\n\n" +
-		"先关掉占用它的那个程序，再重新启动本程序。"
+	portBody  = "端口上已经有别的程序在监听，尝试关掉占用它的那个程序，再重新启动本程序。"
 )
 
 //go:embed loading.html
@@ -76,17 +65,22 @@ var noticeLayout = template.Must(template.ParseFS(noticeFS, "loading.html"))
 
 // noticeData is what the layout is filled with.
 type noticeData struct {
+	Log   bool
 	Title string
 	Body  string
-	Path  string
+	Path  []string
 }
 
 // noticePage builds one small self-contained page. The markup is deliberately plain: this is a
 // message, not a page anyone styles.
-func noticePage(title, body, path string) string {
+func noticePage(log bool, title, body string, path ...string) string {
+	// 这一页带不带输出区域，推送那一路也从这里知道——同一个布尔值，同一个地方说出去。显示是
+	// 标记里那个属性、CSS 认它；推送是这里的一个开关。两件事都不经过页面。
+	showLog = log
+
 	page := bytes.NewBufferString("data:text/html;charset=utf-8;base64,")
 	enc := base64.NewEncoder(base64.StdEncoding, page)
-	err := noticeLayout.Execute(enc, noticeData{Title: title, Body: body, Path: path})
+	err := noticeLayout.Execute(enc, noticeData{Title: title, Body: body, Path: path, Log: log})
 	if err != nil {
 		slog.Error("notice page", "error", err)
 		return ""
@@ -103,37 +97,37 @@ func noticePage(title, body, path string) string {
 // It is also what 重新准备游戏文件 puts up, which is the one place the interrupted 250 MB
 // download is resumed from.
 func preparingPage() string {
-	return noticePage(preparingTitle, preparingBody, logPath())
+	return noticePage(true, preparingTitle, preparingBody)
 }
 
 // nodeMissingPage is shown when there is no Node.js new enough to run the game. The box at the
 // bottom is the command that installs one, not a path: it is the thing to copy.
 func nodeMissingPage() string {
-	return noticePage(nodeTitle, nodeBody, "winget install OpenJS.NodeJS.LTS")
+	return noticePage(false, nodeTitle, nodeBody, "winget install OpenJS.NodeJS.LTS", "https://nodejs.org/zh-cn/download")
 }
 
 // sourceFailedPage is shown when the repository's archive could not be fetched.
 func sourceFailedPage() string {
-	return noticePage(sourceTitle, sourceBody, logPath())
+	return noticePage(false, sourceTitle, sourceBody, logPath())
 }
 
 // updateFailedPage is shown when 更新游戏 could not finish - fetching the new source, clearing the
 // old dependencies, or refreshing the upstream index tables.
 func updateFailedPage() string {
-	return noticePage(updateTitle, updateBody, logPath())
+	return noticePage(false, updateTitle, updateBody, logPath())
 }
 
 // setupFailedPage is shown when the game's own preparation step failed.
 func setupFailedPage() string {
-	return noticePage(setupTitle, setupBody, logPath())
+	return noticePage(false, setupTitle, setupBody, logPath())
 }
 
 // startFailedPage is shown when the server was started but never answered.
 func startFailedPage() string {
-	return noticePage(startTitle, startBody, logPath())
+	return noticePage(false, startTitle, startBody, logPath())
 }
 
 // portBusyPage is shown when the server died because something else holds the port.
 func portBusyPage() string {
-	return noticePage(portTitle, portBody, "")
+	return noticePage(false, portTitle, portBody)
 }

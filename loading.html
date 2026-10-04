@@ -19,23 +19,22 @@
     main {
       max-width: 36em;
       padding: 2em;
-      line-height: 1.9;
     }
 
     h3 {
-      margin: 0 0 .8em;
+      margin-bottom: 0.8em;
       font-weight: 600;
     }
 
     pre {
-      margin: 0;
+      margin-bottom: 1em;
       font: inherit;
       white-space: pre-wrap;
     }
 
     code {
-      display: inline-block;
-      margin-top: 1.4em;
+      display: block;
+      margin-bottom: 1em;
       padding: .4em .7em;
       border: 1px solid #e3e3e3;
       border-radius: 8px;
@@ -45,6 +44,76 @@
       font-size: .85em;
       word-break: break-all;
       user-select: all;
+      line-height: 1.9;
+    }
+
+    /* 常态不可见：只有带输出框的那几页才显示。 */
+    #log-panel {
+      display: none;
+      position: fixed;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      width: min(760px, calc(100vw - 32px));
+      height: 34vh;
+      min-height: 120px;
+      max-height: 72vh;
+      flex-direction: column;
+      overflow: hidden;
+      resize: vertical;
+      border: 1px solid #dcdcdc;
+      border-radius: 10px;
+      background: #ffffff;
+      /* 阴影比深色底时轻：浅色版式本来就不靠它压住背景，太重会像一块浮起来的纸板 */
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .10);
+      color: #3a3a3a;
+      text-align: left;
+    }
+
+    #log-panel[log] {
+      display: flex !important;
+    }
+
+    #log-head {
+      display: flex;
+      align-items: center;
+      gap: .6em;
+      flex: none;
+      padding: .4em .6em;
+      background: #f4f4f5;
+      border-bottom: 1px solid #e6e6e8;
+      font-size: .8em;
+      color: #6b6b73;
+      cursor: default;
+      user-select: none;
+    }
+
+    #log-head .log-title {
+      font-weight: 600;
+      color: #333338;
+    }
+
+    #log-count {
+      margin-left: auto;
+      font-variant-numeric: tabular-nums;
+      color: #8a8a92;
+    }
+
+    #log-box {
+      flex: 1 1 auto;
+      /* 这一条是必需的：flex 项默认不肯缩到内容以下，少了它滚动条就出不来 */
+      min-height: 0;
+      overflow: auto;
+      padding: .5em .8em;
+      font-family: Consolas, 'Cascadia Mono', 'Courier New', monospace;
+      font-size: .78em;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .log-row {
+      color: #3f3f45;
     }
   </style>
 </head>
@@ -53,8 +122,56 @@
   <main>
     <h3>{{ .Title }}</h3>
     <pre>{{ .Body }}</pre>
-    {{ if .Path }}<code>{{ .Path }}</code>{{ end }}
+    {{ range .Path }}<code>{{ . }}</code>{{ end }}
   </main>
+
+  <section id="log-panel" {{ if .Log }}log{{ end }}>
+    <div id="log-head">
+      <span class="log-title">实时输出</span>
+      <span id="log-count">0 行</span>
+    </div>
+    <div id="log-box"></div>
+  </section>
+
+  <!-- 输出框的画笔。
+       这段脚本是静态写在页面里的，不经过任何模板值——所以它里面可以放心用引号、&& 和注释：
+       模板只认那对包起来的动作，别处的正文它一个字节都不碰。
+
+       反过来说，这段注释和这段脚本里都**不能**写出那对括号的样子：模板是在解析整个文件时找
+       动作的，写在注释里它也照认，于是会当场报 "missing value for command"。这条弯路刚走过：
+       第一版这段注释就是这么失败的。
+
+       它只管画：Go 推来的是一个字符串数组，一行一个。它不看上面那个 log 属性（显示是 CSS 的
+       事），也不回话。行是用 createTextNode 放进去的，从不碰 innerHTML：日志里什么都会出现
+       （素材的文件名、服务的报错、别人写的字符串），拼 HTML 就是把它们当标记解释。 -->
+  <script>
+    (function () {
+      var box = document.getElementById('log-box');
+      var count = document.getElementById('log-count');
+      if (!box || !count) return;
+
+      // 页面里封顶 200 行，与 Go 那边一次推的上限一致：再多也没有人会往上翻着看。
+      var MAX_ROWS = 200;
+
+      window.__spLog = function (lines) {
+        // 用户停在底部时跟随，往上翻着看时不抢滚动条。
+        var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 32;
+
+        var fragment = document.createDocumentFragment();
+        lines.forEach(function (line) {
+          var row = document.createElement('div');
+          row.className = 'log-row';
+          row.appendChild(document.createTextNode(line));
+          fragment.appendChild(row);
+        });
+        box.appendChild(fragment);
+
+        while (box.childNodes.length > MAX_ROWS) box.removeChild(box.firstChild);
+        count.textContent = box.childNodes.length + ' 行';
+        if (atBottom) box.scrollTop = box.scrollHeight;
+      };
+    })();
+  </script>
 </body>
 
 </html>

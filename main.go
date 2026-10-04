@@ -387,6 +387,9 @@ func main() {
 	if err := win.Bind("_join", func(raw string) { setURL(raw) }); err != nil {
 		slog.Warn("binding _join", "error", err)
 	}
+	// 提示页上那块输出区域的数据那一路：缓冲区在 setupLogging 里就接上了，这里只是开始推。
+	attachLogPanel(win)
+
 	// 页面里的全屏按钮走标准 Fullscreen API，而那只让页面填满控件：要让窗口自己变
 	if err := win.Bind("_fullscreen", func(on bool) { win.fullScreen(on) }); err != nil {
 		slog.Warn("binding _fullscreen", "error", err)
@@ -426,6 +429,8 @@ func main() {
 	systray.Register(onReady, nil)
 	win.Run()
 	slog.Info("the message loop ended")
+	// 窗口没了，推送那一路也停下来：之后写下的几行记录不该再往一个不存在的页面里发。
+	stopLog()
 
 	// 退出前把窗口尺寸记下来。窗口最大化着退出也记得对：WindowRect 取的是「还原后的那个矩
 	// 形」，并把最大化这件事一起记下

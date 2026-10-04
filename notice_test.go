@@ -31,35 +31,88 @@ func TestNoticePages(t *testing.T) {
 		name  string
 		page  string
 		title string
-		// code is what the box at the foot of the page has to carry. The port page carries no
-		// box: the thing to do about a taken port is not a path or a command.
-		code string
 	}{
-		{"preparing", preparingPage(), preparingTitle, logPath()},
-		{"node", nodeMissingPage(), nodeTitle, "winget install OpenJS.NodeJS.LTS"},
-		{"source", sourceFailedPage(), sourceTitle, logPath()},
-		{"update", updateFailedPage(), updateTitle, logPath()},
-		{"setup", setupFailedPage(), setupTitle, logPath()},
-		{"start", startFailedPage(), startTitle, logPath()},
-		{"port", portBusyPage(), portTitle, ""},
+		{"preparing", preparingPage(), preparingTitle},
+		{"node", nodeMissingPage(), nodeTitle},
+		{"source", sourceFailedPage(), sourceTitle},
+		{"update", updateFailedPage(), updateTitle},
+		{"setup", setupFailedPage(), setupTitle},
+		{"start", startFailedPage(), startTitle},
+		{"port", portBusyPage(), portTitle},
 	} {
 		html := decodeNotice(t, c.page)
 		if !strings.Contains(html, c.title) {
 			t.Errorf("%s page does not carry its title %q", c.name, c.title)
 		}
-		// 路径与命令都不是抄进文字里的一份，而是现给的：这里查的就是它有没有真的到页面上。
-		if has := strings.Contains(html, "<code"); has != (c.code != "") {
-			t.Errorf("%s page carries the box = %v, want %v:\n%s", c.name, has, c.code != "", html)
+	}
+}
+
+// 「哪几页带输出框」：只靠那个属性有没有出现在标签上，而 CSS 只认这个属性。
+//
+// 这条测试盯的是一处真出过的错：Go 渲染的和 CSS 认的必须是同一件东西。曾经 Go 写属性 log="true"、
+// 而 CSS 认的是类名 .log-on——两半对不上，于是没有任何规则把框显示出来，屏幕上只表现为「全都不
+// 显示」，看不出原因。
+//
+// 它只做静态检查，不模拟 CSS：页面里必须既有那个属性、又有认这个属性的规则。
+func TestNoticePanelMarkMatchesTheCSS(t *testing.T) {
+	on := decodeNotice(t, preparingPage())
+	if !strings.Contains(on, `<section id="log-panel" log>`) {
+		t.Error("带输出框的页，标签上应当有 log 这个属性")
+	}
+	if !strings.Contains(on, "#log-panel[log] {") {
+		t.Error("CSS 里应当有一条认 log 属性的规则")
+	}
+	if !strings.Contains(on, "display: flex !important") {
+		t.Error("那条规则要把框显示出来")
+	}
+
+	// 不带输出框的页：标签上一个 log 也没有，于是只有基础规则里的 display:none 生效。
+	off := decodeNotice(t, portBusyPage())
+	if !strings.Contains(off, `<section id="log-panel" >`) {
+		t.Error("不带输出框的页，那一处不该有 log 属性")
+	}
+}
+
+// 输出区域的画笔是页面自己的静态脚本，随文档一起发。
+//
+// 这条测试盯两件事：脚本确实在页面上（不是靠注入、不是靠模板值），以及它里面没有模板动作——
+// 在 <script> 里放一个 {{ ... }}，编辑器会报「Declaration or statement expected」，而浏览器
+// 拿到的是被换过值的脚本。
+func TestNoticePageCarriesThePainter(t *testing.T) {
+	html := decodeNotice(t, preparingPage())
+	for _, want := range []string{
+		"window.__spLog = function (lines) {",
+		"document.createTextNode(line)",
+		"row.className = 'log-row'",
+		"#log-box",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("页面上缺了画笔的一部分：%q", want)
 		}
-		if c.code != "" && !strings.Contains(html, c.code) {
-			t.Errorf("%s page does not carry %q:\n%s", c.name, c.code, html)
-		}
+	}
+	if strings.Contains(html, "{{") || strings.Contains(html, "}}") {
+		t.Error("渲染出来的页面里还剩模板动作——脚本里不该有 {{ }}")
+	}
+}
+
+// noticePage 是唯一知道「这一页要不要输出框」的地方，推送那一路也从它这里拿这个值。
+func TestNoticePageSetsTheLogSwitch(t *testing.T) {
+	saved := showLog
+	defer func() { showLog = saved }()
+
+	preparingPage()
+	if !showLog {
+		t.Error("准备页带输出框，推送开关该打开")
+	}
+	portBusyPage()
+	if showLog {
+		t.Error("端口那一页不带输出框，推送开关该关掉")
 	}
 }
 
 func TestNoticePageEscapesItsText(t *testing.T) {
 	// 标题、正文、路径三者都过一遍引擎：路径里同样会有 < 和 &（用户名里就可能有）。
-	html := decodeNotice(t, noticePage("T & T", "<not a tag>", "C:\\a & b\\log"))
+	html := decodeNotice(t, noticePage(false, "T & T", "<not a tag>", "C:\\a & b\\log"))
 	for _, want := range []string{"T &amp; T", "&lt;not a tag&gt;", "C:\\a &amp; b\\log"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("text handed to noticePage was not escaped as %q:\n%s", want, html)

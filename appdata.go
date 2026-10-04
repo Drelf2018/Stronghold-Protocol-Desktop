@@ -166,8 +166,13 @@ func setupLogging() {
 	}
 	logFile = file.Name()
 	// pid 带上：多开时几份实例写进同一个 app.log（见 openAt），日志里得看得出哪一行是哪一份。
-	slog.SetDefault(slog.New(slog.NewTextHandler(file, nil)).With("pid", os.Getpid()))
+	fileLog := slog.New(slog.NewTextHandler(file, nil)).With("pid", os.Getpid())
+	// 外面再套一层：提示页上那块输出区域从同一个出口分走一份（见 logview.go）。落盘的内容不变。
+	stopLog = installLogSink(fileLog.Handler())
 }
+
+// stopLog 拆掉输出区域那一路。由 main 在消息循环结束之后调用：窗口已经没了，日志却还会再写几行。
+var stopLog = func() {}
 
 // windowStatePath is the file the window's size and maximised state are remembered in.
 func windowStatePath() string {
