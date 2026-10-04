@@ -55,3 +55,19 @@ func TestWindowTitle(t *testing.T) {
 		}
 	}
 }
+
+// 托盘图标的悬停提示：程序名 + 这一份的版本。它是版本号唯一露脸的地方，所以两头的写法都钉住。
+func TestTrayName(t *testing.T) {
+	for _, c := range []struct {
+		version string
+		want    string
+	}{
+		{"v0.3.0", "卫戍协议：盟约 启动器 - v0.3.0"},
+		{"dev", "卫戍协议：盟约 启动器 - dev"},
+		{"", "卫戍协议：盟约 启动器"},
+	} {
+		if got := trayName(c.version); got != c.want {
+			t.Errorf("trayName(%q) = %q, want %q", c.version, got, c.want)
+		}
+	}
+}

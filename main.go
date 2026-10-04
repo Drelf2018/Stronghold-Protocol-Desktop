@@ -48,6 +48,9 @@ const (
 
 	// launcherName 是 exe 自己的名字，用在它的两个"身份"场合：起不来时的报错弹窗，以及托盘的
 	// 悬停提示。窗口标题用的是 appName——那扇窗里装的是游戏。
+	//
+	// 托盘那一处还跟着版本号（见 trayName）：报错弹窗说的是"这个东西没能起来"，而托盘说的是"现在
+	// 跑着的这一份是哪一版"——后一句话才有人会问。
 	launcherName = "卫戍协议：盟约 启动器"
 	appID        = "stronghold-protocol-launcher"
 )
@@ -66,6 +69,19 @@ const (
 // its place twice. It goes to the log at startup, which is where the question it answers ("which
 // build is this") is asked anyway.
 var Version = "dev"
+
+// trayName 是托盘图标的悬停提示：程序名加上这一份的版本。
+//
+// 版本号在这里第一次被人看见——此前它只进日志。而"你装的是哪一版"正是排障时第一个被问的问题，问的
+// 时候人正指着托盘。发布版拿到的是 tag（v0.3.0），自己编的那一份是 dev，两者都照原样写上去。
+//
+// 版本为空时只写名字，不留一个孤零零的分隔符。
+func trayName(version string) string {
+	if version == "" {
+		return launcherName
+	}
+	return launcherName + " - " + version
+}
 
 // win is the main window, set once in main and never nil after that: newWindow
 // returns nil when the WebView2 runtime is missing or the window could not be
@@ -522,7 +538,7 @@ func main() {
 
 	onReady := func() {
 		systray.SetIcon(icon)
-		systray.SetTooltip(launcherName)
+		systray.SetTooltip(trayName(Version))
 		systray.SetOnLeftClick(win.Show)
 		addMenuItems()
 	}
