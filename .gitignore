@@ -25,6 +25,10 @@ profile.cov
 go.work
 go.work.sum
 
+# Build and module caches, for building inside a workspace without touching %GOCACHE%
+.gocache/
+.gomodcache/
+
 # env file
 .env
 
