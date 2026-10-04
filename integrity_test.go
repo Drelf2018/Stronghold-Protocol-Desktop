@@ -1,9 +1,8 @@
 package main
 
-// The integrity level is measured rather than assumed, so it is worth one test that it is
-// measured at all. What it comes out as depends on whoever is running the tests - a normal
-// account gets "medium", a sandboxed one "low" - so only the vocabulary is pinned here, and the
-// value is printed for whoever is reading the output.
+// 完整性级别是**量出来的**，不是假设的，所以值得有一条测试证明它真的被量了。量出来是什么
+// 取决于跑测试的人：普通账户是 medium，沙箱里是 low——所以这里只钉住那套词汇，具体值打印出
+// 来给读输出的人看。
 
 import "testing"
 

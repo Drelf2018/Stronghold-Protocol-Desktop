@@ -2,8 +2,8 @@
 
 package main
 
-// Where this app's own files are: the data folder under %LOCALAPPDATA%, the log inside it, the
-// window state beside it, and the folder the running .exe sits in.
+// 本程序自己的文件都在哪：%LOCALAPPDATA% 下的数据目录、里面的日志、旁边的窗口状态，以及这个
+// 正在跑的 .exe 所在的那个目录。
 
 import (
 	"encoding/json"
@@ -12,38 +12,37 @@ import (
 	"path/filepath"
 )
 
-// windowState is what the app remembers between runs: the size the window was left at, whether it
-// was maximised, whether it was left on top, and which of the three size settings produced it. It
-// is window-state.json.
+// windowState 是本程序跨运行记住的东西：窗口离开时的尺寸、是不是最大化的、是不是留在了最上层，
+// 以及它是三组尺寸设置里的哪一组产生的。它就是 window-state.json。
 //
-// The size is a *window rectangle*, borders included, because that is what CreateWindowExW is given
-// when the window is built. There is no position here on purpose: within a run Windows keeps a
-// hidden window's rectangle, and across runs the window opens centred.
+// 这里的尺寸是**整扇窗的矩形**，边框算在内——因为窗口建起来时交给 CreateWindowExW 的就是它。
+// 位置不在这里是刻意的：一次运行之内，Windows 会替一个隐藏的窗口留着它的矩形；而跨运行时，
+// 窗口总是居中打开的。
 //
-// There is no address here either: a launcher for one game has one address, and it is a constant.
+// 游戏自己的地址不在这里：一个只伺候一款游戏的启动器只有一个地址，而它是个常量。这里放的是
+// 窗口**离开时停在**的那个地址——在有人打开朋友发来的链接之前它就是这个常量，之后就是那个
+// 房间（见下面的 URL）。
 type windowState struct {
 	Width     int  `json:"width"`
 	Height    int  `json:"height"`
 	Maximized bool `json:"maximized"`
 
-	// URL is the address the window was left on: the game's own, or a room joined by link. Empty
-	// means nothing was chosen, and the run opens this machine's own game.
+	// URL 是窗口离开时停在的那个地址：游戏自己的，或者由链接加入的某个房间。为空表示没有选过，
+	// 这一次运行就打开本机自己的游戏。
 	URL string `json:"url"`
 
-	// Size is what the three menus were set to. The window rectangle above is the size the
-	// window was actually left at - which a drag can move away from what the menus describe -
-	// so this is kept apart from it: the rectangle says how big to open, this says which
-	// entry to tick when the menus are built.
+	// Size 是三组菜单被设成了哪一组。上面那个窗口矩形是窗口**实际**离开时的尺寸——拖一下就能
+	// 离开菜单所描述的那个值——所以两者分开存：矩形说的是「开多大」，这个说的是「菜单建起来时
+	// 该在哪一项上打勾」。
 	Size sizeOnDisk `json:"size"`
 
-	// OnTop is whether the window was left above the others. It is put back on the next run,
-	// and the tick beside 置顶 comes from the window itself, so this is read from there on the
-	// way out rather than kept in a variable of its own.
+	// OnTop 是窗口离开时是不是压在别人上面。下一次运行会把它装回去，而「置顶」旁边那个勾是从
+	// 窗口本身读的，所以这个值是出去的时候从那里读的，而不是另外养一个变量。
 	OnTop bool `json:"onTop"`
 }
 
-// LogValue renders the state as a group, so a "state" field in the log keeps the field names
-// the old %+v showed, and stays readable to anything that reads the log back.
+// LogValue 把状态画成一个组，这样日志里那个 state 字段保留着旧时 %+v 显示的那几个字段名，
+// 对任何回头读日志的东西也仍旧可读。
 func (s windowState) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.Int("width", s.Width),
@@ -54,20 +53,17 @@ func (s windowState) LogValue() slog.Value {
 	)
 }
 
-// dataDirOverride is what -data-dir put here: where this app keeps its own files instead of the
-// folder under %LOCALAPPDATA%. It is for the machine whose profile cannot be written to - the one
-// case where the default folder is not merely inconvenient but unusable - and for running a
-// second, self-contained copy beside the first.
+// dataDirOverride 是 -data-dir 放在这里的：本程序把自己的文件放在哪，而不是 %LOCALAPPDATA% 下
+// 那个目录。它是给写不进自己配置目录的机器用的——那是「默认目录不只是不方便、而是根本用不了」
+// 的唯一一种情况——也是给「在第一份旁边再跑一份自成一体的的副本」用的。
 var dataDirOverride string
 
-// appDataDir is the folder this app owns: everything it writes belongs under it (the WebView2
-// profile in EBWebView inside it is the one thing it does not own). Left to themselves
-// go-webview2 would name a folder after the .exe and WebView2 would put its profile beside it, so
-// the app names its own.
+// appDataDir 是本程序自己的那个目录：它写下的每一样东西都该在它下面（里面那个 EBWebView 里的
+// WebView2 配置是唯一一样不属于它的）。要是放着不管，go-webview2 会按 .exe 的名字起一个目录，
+// WebView2 会把它的配置放在旁边——所以本程序自己起名。
 //
-// WebView2 is handed this directory too, and it is not tolerant of one it cannot create its
-// EBWebView in: it fails, and the library panics rather than returning. That is what ensureDataDir
-// is for.
+// 这个目录也交给 WebView2，而它对一个建不出 EBWebView 的目录毫不宽容：它会失败，而库不会返回
+// 错误，是直接 panic。ensureDataDir 就是为这件事存在的。
 func appDataDir() string {
 	if dataDirOverride != "" {
 		return dataDirOverride
@@ -75,26 +71,23 @@ func appDataDir() string {
 	return filepath.Join(os.Getenv("LOCALAPPDATA"), appID)
 }
 
-// ensureDataDir creates the data directory, and is asked *before* the window is built: a data
-// directory that cannot be created is a window that cannot be created, and saying so beats
-// discovering it in a panic.
+// ensureDataDir 建出数据目录，而且要在窗口建起来**之前**问一次：建不出来的数据目录就是建不出来
+// 的窗口，而明说一句总比在 panic 里发现它好。
 func ensureDataDir() error {
 	return os.MkdirAll(appDataDir(), 0o755)
 }
 
-// gameDir is where the game itself lives: its source, its node_modules, and the art and audio it
-// downloads. Under the same folder as everything else this app owns, so that one folder is the
-// whole installation - and "打开游戏目录" in the tray has something to point at.
+// gameDir 是游戏本身住的地方：它的源码、它的 node_modules，以及它下载的美术与音频。放在本程序
+// 自己的东西同一个目录下面，这样这一个目录就是整份安装——托盘里的「打开游戏目录」也才有东西可指。
 func gameDir() string {
 	return filepath.Join(appDataDir(), "game")
 }
 
-// logFile is the file setupLogging actually opened. It is not always under appDataDir: a machine
-// whose profile cannot be written gets the log in the temp folder instead, so that a run that goes
-// wrong still leaves something to read.
+// logFile 是 setupLogging 实际打开的那个文件。它不一定在 appDataDir 下：写不进自己配置目录的
+// 机器会把日志放在临时目录里，这样一次出了问题的运行至少还留下点能读的东西。
 var logFile string
 
-// logPath is the file the app writes its own diagnostics to.
+// logPath 是本程序写自己那些诊断信息的文件。
 func logPath() string {
 	if logFile != "" {
 		return logFile
@@ -102,9 +95,8 @@ func logPath() string {
 	return filepath.Join(appDataDir(), "app.log")
 }
 
-// programDir is the folder the running .exe sits in, which the menu opens as 程序目录. It
-// belongs to whoever put the folder there, unlike appDataDir - the only place this program
-// writes.
+// programDir 是正在跑的这个 .exe 所在的目录，菜单里作为「程序目录」打开。它属于把它放在那里的
+// 人，和 appDataDir 不一样——后者是本程序唯一写东西的地方。
 func programDir() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -113,11 +105,11 @@ func programDir() (string, error) {
 	return filepath.Dir(exe), nil
 }
 
-// logLimit is where a log is rotated aside. A long-lived installation writes for months, and
-// nothing inside a run rotates it, so the check happens once, on the way in.
+// logLimit 是日志轮转的界限。一份长期在用的安装会写上几个月，而一次运行之内没有任何东西去轮转
+// 它，所以这个检查只在进来的那一次做。
 const logLimit = 1 << 20
 
-// openAt opens a log file, starting a fresh one once the last has grown large.
+// openAt 打开一个日志文件；上一份长得太大了，就另起一份新的。
 //
 // 多开之后这一步会失败，而且失败是正常的：Windows 下 Go 打开文件只给 FILE_SHARE_READ 与
 // FILE_SHARE_WRITE，没有 FILE_SHARE_DELETE，所以只要还有另一份实例开着这个文件，改名就会被拒。
@@ -136,7 +128,7 @@ func openAt(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 }
 
-// openLog opens the log inside the data directory, creating the directory first.
+// openLog 打开数据目录里的日志，先把目录建出来。
 func openLog() (*os.File, error) {
 	if err := ensureDataDir(); err != nil {
 		return nil, err
@@ -144,15 +136,14 @@ func openLog() (*os.File, error) {
 	return openAt(filepath.Join(appDataDir(), "app.log"))
 }
 
-// setupLogging sends the app's log records to a file.
+// setupLogging 把本程序的日志记录送去一个文件。
 //
-// There is no console (-H=windowsgui), so without this every line would go to a stderr nobody can
-// see. One slog.SetDefault covers the standard library and every package that logs through it.
+// 没有控制台（-H=windowsgui），所以少了这一步，每一行都会去一个没人看得见的标准错误输出。
+// 一次 slog.SetDefault 就罩住了标准库、以及每一个通过它写日志的包。
 //
-// A data directory that cannot be written must not take the log down with it. With no log at all a
-// failed run leaves nothing whatsoever behind - no window, no file, no clue - which is the failure
-// this fallback exists for. The temp folder is the second choice, and it is named in the message
-// the program puts on screen when it cannot get that far either.
+// 一个写不进去的数据目录，不能把日志一起带走。完全没有日志时，一次失败的运行什么都不会留下——
+// 没有窗口、没有文件、没有线索——这个后备就是为那种失败存在的。临时目录是第二个选择，而连那里
+// 也去不了时，它会写进本程序摆在屏幕上的那条消息里。
 func setupLogging() {
 	file, err := openLog()
 	if err != nil {
@@ -174,16 +165,15 @@ func setupLogging() {
 // stopLog 拆掉输出区域那一路。由 main 在消息循环结束之后调用：窗口已经没了，日志却还会再写几行。
 var stopLog = func() {}
 
-// windowStatePath is the file the window's size and maximised state are remembered in.
+// windowStatePath 是记住窗口尺寸与最大化状态的那个文件。
 func windowStatePath() string {
 	return filepath.Join(appDataDir(), "window-state.json")
 }
 
-// loadWindowState is the state the last run recorded.
+// loadWindowState 是上一次运行记下的状态。
 //
-// A missing file, an unreadable one, and one whose size cannot describe a window all
-// mean the same thing to the caller: there is nothing to restore, so the window opens
-// the way the menu settings ask for.
+// 文件不在、读不出来、以及里面的尺寸根本描述不了一扇窗——这三件事对调用方是同一个意思：没有
+// 东西可恢复，于是窗口按菜单设置要求的那个样子打开。
 func loadWindowState() (windowState, bool) {
 	data, err := os.ReadFile(windowStatePath())
 	if err != nil {
@@ -204,7 +194,7 @@ func loadWindowState() (windowState, bool) {
 	return s, true
 }
 
-// saveWindowState records the size the window was left at, for the next run.
+// saveWindowState 记下窗口离开时的尺寸，留给下一次运行。
 func saveWindowState(s windowState) {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

@@ -1,8 +1,8 @@
 package main
 
-// The one piece of the launcher that can be checked without a network, a Node.js or a running
-// server: how a version is read, and the names a tar brings and the paths they are allowed to
-// become. The archive is unpacked from bytes here, so the check does not depend on GitHub.
+// 启动器里唯一能在没有网络、没有 Node.js、也没有服务在跑的情况下检查的那部分：版本怎么读，
+// 以及 tar 带来的那些名字、以及它们被允许变成什么路径。归档是在这里从字节解包的，所以这项
+// 检查不依赖 GitHub。
 
 import (
 	"archive/tar"
@@ -160,8 +160,8 @@ func TestJoinURL(t *testing.T) {
 	}
 }
 
-// tarball builds the smallest archive that has the shape this reads: one top-level folder, files
-// under it, and one name that tries to climb out of it.
+// tarball 造出最小的那一份归档，形状就是被测代码要读的：一个顶层目录、它下面的文件，以及一个
+// 试图爬出这个目录的名字。
 func tarball(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var buf bytes.Buffer

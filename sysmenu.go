@@ -2,15 +2,13 @@
 
 package main
 
-// The window's own menu: the system menu that comes up on a right click on the title bar (or
-// Alt+Space), with this program's own items attached at the very top.
+// 窗口自己的菜单：右键标题栏（或按 Alt+空格）弹出的那个系统菜单，本程序自己的项挂在最上面。
 //
-// Why here: whoever right clicks the title bar wants to adjust **this window**, whoever
-// right clicks the tray wants to work **this program**. The window's size, position and
-// topmost state travel with the window; the log, autostart and the address stay in the tray.
+// 为什么放这儿：右键标题栏的人要调的是**这个窗口**，右键托盘的人要弄的是**这个程序**。
+// 窗口的尺寸、位置与置顶状态跟着窗口走；日志、自启和地址留在托盘里。
 //
-// The system menu rather than a hand-drawn TrackPopupMenu: the look, the shortcuts, the
-// moment and the place it pops up are all the system's.
+// 用系统菜单，不用手画的 TrackPopupMenu：外观、快捷键、弹出的时机与位置，
+// 全都是系统的。
 
 import (
 	"log/slog"
@@ -19,17 +17,15 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The command ids, and neither rule may be broken:
+// 命令 id，两条规则一条都不能破：
 //
-//  1. **The low four bits must be 0.** WM_SYSCOMMAND uses them as an internal marker and
-//     clears them before comparing, so 0xF101 becomes 0xF100 and two items collide.
-//  2. **0xF000-0xF180 must be avoided.** Those are the system's own SC_* command numbers:
-//     0xF100 is SC_KEYMENU, 0xF110 is SC_ARRANGE, 0xF120 is SC_RESTORE. Landing on
-//     SC_RESTORE has a very concrete consequence - 还原 is greyed out by the system while
-//     the window is not maximised, and the item of ours goes dead with it.
+//  1. **低四位必须是 0。** WM_SYSCOMMAND 拿它们当内部标记，比较前会清掉，于是 0xF101
+//     变成 0xF100，两项就撞在一起了。
+//  2. **要避开 0xF000-0xF180。** 那是系统自己的 SC_* 命令号：0xF100 是 SC_KEYMENU，
+//     0xF110 是 SC_ARRANGE，0xF120 是 SC_RESTORE。落在 SC_RESTORE 上后果很具体——
+//     窗口没有最大化时系统会把 还原 置灰，我们那一项也跟着一起失效。
 //
-// Each of the three size groups gets a range of its own; item i within a group has the id
-// base + i*0x10.
+// 三组尺寸各自占一段范围；组内第 i 项的 id 是 base + i*0x10。
 const (
 	sysMenuCenter      = 0xF200
 	sysMenuTopMost     = 0xF210
@@ -40,38 +36,36 @@ const (
 	sysMenuShareBase  = 0xF400
 	sysMenuRatioBase  = 0xF500
 
-	// SC_CLOSE, the command id Windows gives 关闭 in every system menu. It is how the place
-	// this program's size settings go is found; see insertionBeforeClose.
+	// SC_CLOSE，Windows 在每个系统菜单里给 关闭 的命令 id。本程序尺寸设置该去的位置就是
+	// 靠它找出来的；见 insertionBeforeClose。
 	scClose = 0xF060
 )
 
-// sysMenu is the system menu's handle: the tick states are changed through it.
+// sysMenu 是系统菜单的句柄：勾选状态都通过它改。
 var sysMenu uintptr
 
-// The tick sync for each group: after an item is picked, that group's ticks are laid out
-// again.
+// 每一组的勾选同步：某项被选中后，把那一组的勾选重新摆一遍。
 var sysTicks struct {
 	anchor func(anchor)
 	share  func(share)
 	ratio  func(ratio)
 }
 
-// menuItemCount is how many entries the menu holds right now.
+// menuItemCount 是菜单此刻有多少项。
 func menuItemCount(menu uintptr) int {
 	count, _, _ := procGetMenuItemCount.Call(menu)
 	return int(count)
 }
 
-// menuItemID is the command id at one position in a menu.
+// menuItemID 是菜单里某个位置上的命令 id。
 func menuItemID(menu, position uintptr) uintptr {
 	id, _, _ := procGetMenuItemID.Call(menu, position)
 	return id
 }
 
-// menuItemLabel reads one entry's text back, ampersands and shortcut and all, exactly as
-// Windows stores it. A separator has none, and that is how one is recognised here:
-// GetMenuItemID cannot tell it, because a separator's id is whatever it was inserted with -
-// this program's own go in with 0.
+// menuItemLabel 把某一项的文本原样读回来，连 & 和快捷键一起，跟 Windows 存的一模一样。
+// 分隔线没有文本，这里就是靠这一点认出它的：GetMenuItemID 分不出来，因为分隔线的 id 就是
+// 插入时给的任何东西——本程序自己的都拿 0 插进去。
 func menuItemLabel(menu, position uintptr) string {
 	buf := make([]uint16, 128)
 	n, _, _ := procGetMenuStringW.Call(
@@ -83,16 +77,14 @@ func menuItemLabel(menu, position uintptr) string {
 	return windows.UTF16ToString(buf[:n])
 }
 
-// insertionBeforeClose says where this program's size settings go, and whether a separator
-// already stands between them and 关闭.
+// insertionBeforeClose 说明本程序的尺寸设置该去哪，以及它们和 关闭 之间是不是已经有一条
+// 分隔线。
 //
-// 关闭 is found by its command id, SC_CLOSE, because that is Windows' own constant and does
-// not move when items are inserted above it. Counting cannot do this job: a count says how
-// many entries the menu holds, not where this program's own items have pushed the system's.
-// The two agree only while the number of items inserted above stays the same - add one and
-// the group lands in the wrong half of the menu, and the only symptom is a menu that looks a
-// little odd. (That is not hypothetical: Windows 11's system menu holds no separator above
-// 关闭, so the count the earlier code used put this group between 最小化 and 最大化.)
+// 关闭 靠自己的命令 id SC_CLOSE 找，因为那是 Windows 自己的常量，在它上面插项也不会挪。
+// 数数干不了这活：数量只说菜单有多少项，说不出本程序自己的项把系统的项挤到了哪儿。两者只在
+// 上面插入的项数不变时才一致——多插一项，这一段就落到菜单的错误半边，唯一的症状是菜单看
+// 起来有点怪。（这不是假设：Windows 11 的系统菜单在 关闭 上面没有分隔线，于是早先的代码
+// 用数量算，把这一段放到了 最小化 和 最大化 中间。）
 func insertionBeforeClose(menu uintptr) (at int, separator bool) {
 	count := menuItemCount(menu)
 	closeAt := count
@@ -109,13 +101,11 @@ func insertionBeforeClose(menu uintptr) (at int, separator bool) {
 	return closeAt, false
 }
 
-// installSystemMenu puts this program's items into the system menu: the three window items at
-// the very top, ahead of 还原 / 移动, and the size settings further down, between 最大化 and
-// 关闭.
+// installSystemMenu 把本程序的项放进系统菜单：三项窗口项目在最上面，排在 还原 / 移动 之前，
+// 尺寸设置则在下面，夹在 最大化 与 关闭 之间。
 //
-// InsertMenuW rather than AppendMenuW: only the former can insert at a given position, and
-// the position argument has to carry MF_BYPOSITION, or Windows takes that number for a
-// command id and goes looking for the item it names.
+// 用 InsertMenuW 而不是 AppendMenuW：只有前者能在指定位置插入，而且位置参数必须带上
+// MF_BYPOSITION，否则 Windows 会把这个数字当成命令 id，去找它指名的那个项。
 func installSystemMenu(win *webviewWindow) {
 	menu, _, _ := procGetSystemMenu.Call(win.hwnd, 0)
 	if menu == 0 {
@@ -181,17 +171,16 @@ func installSystemMenu(win *webviewWindow) {
 	slog.Info("system menu: window items inserted")
 }
 
-// insertGroup puts one settings group at the next position and moves the counter on, so the
-// caller never has to count the items it has already added.
+// insertGroup 把一个设置组放在下一个位置上，并把计数器往后推，调用方永远不用去数自己已经
+// 加了几项。
 func insertGroup[T titled](menu uintptr, at *int, title string, values []T, current T, base uintptr) func(T) {
 	tick := insertSystemGroup(menu, uintptr(*at), title, values, current, base)
 	*at++
 	return tick
 }
 
-// insertSystemItem inserts one item at the given position. A separator has neither an id nor
-// a text, which is what those empty arguments mean; for a submenu the id argument becomes the
-// submenu handle, which is how MF_POPUP is used.
+// insertSystemItem 在给定位置插入一项。分隔线既没有 id 也没有文本，那几个空参数就是这个意
+// 思；对子菜单来说 id 参数变成子菜单句柄，MF_POPUP 就是这么用的。
 func insertSystemItem(menu, position, flags, id uintptr, text string) {
 	var label uintptr
 	if text != "" {
@@ -207,12 +196,10 @@ func insertSystemItem(menu, position, flags, id uintptr, text string) {
 	}
 }
 
-// insertSystemGroup turns a group of single-choice values into a submenu, and returns the
-// function that puts that group's ticks right.
+// insertSystemGroup 把一组单选值变成一个子菜单，并返回把那一组勾选摆正的那个函数。
 //
-// A submenu in the system menu is no different from one in the tray, except that the ticks
-// have to be drawn by hand: the Check/Uncheck pair belongs to the tray library, and
-// CheckMenuItem is what is used here.
+// 系统菜单里的子菜单和托盘里的没什么不同，只是勾选得自己画：Check/Uncheck 那一对是托盘库
+// 的，这里用的是 CheckMenuItem。
 func insertSystemGroup[T titled](menu, position uintptr, title string, values []T, current T, base uintptr) func(T) {
 	sub, _, _ := procCreatePopupMenu.Call()
 	if sub == 0 {
@@ -236,8 +223,8 @@ func insertSystemGroup[T titled](menu, position uintptr, title string, values []
 	return tick
 }
 
-// handleSystemCommand carries out the commands we attached ourselves, and says whether this
-// one was ours. When it was not it goes to Windows, which owns Close, Move and Minimise.
+// handleSystemCommand 执行我们自己挂上去的命令，并说明这一条是不是我们的。不是的时候就交给
+// Windows，Close、Move 和 Minimise 归它管。
 func handleSystemCommand(command uintptr) bool {
 	// 全屏的窗口没有标题栏，这些菜单项本来就够不到；但别的入口仍可能把它们叫起来，所以先把窗口从
 	// 全屏里放出来，再按菜单的意思去动它——否则会得到一个没有边框、又不再铺满的窗口。
@@ -274,8 +261,7 @@ func handleSystemCommand(command uintptr) bool {
 	return true
 }
 
-// menuValue turns a command id back into the value it stands for: id = base + index*0x10, and
-// an index out of range means it is not this group.
+// menuValue 把命令 id 变回它代表的值：id = base + index*0x10，索引越界就说明它不是这一组。
 func menuValue[T comparable](values []T, base, command uintptr) (T, bool) {
 	var zero T
 	if command < base {
@@ -288,8 +274,7 @@ func menuValue[T comparable](values []T, base, command uintptr) (T, bool) {
 	return values[i], true
 }
 
-// syncTopMostTick keeps the tick honest: of these items it is the only one that is a state
-// rather than an action.
+// syncTopMostTick 让勾选保持诚实：这些项里只有它是一个状态，而不是一个动作。
 func syncTopMostTick(on bool) {
 	if sysMenu == 0 {
 		return

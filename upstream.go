@@ -28,26 +28,26 @@ import (
 )
 
 const (
-	// upstreamCommit asks for the newest commit on the branch the archive is fetched from.
+	// upstreamCommit 问的是归档所在那个分支上最新的一个 commit。
 	upstreamCommit = "https://api.github.com/repos/sganggs/Stronghold-Protocol/commits?per_page=1"
 
-	// upstreamFeed is the same answer in another form, for when the API says no: 403 (限流), or a
-	// proxy that only lets some hosts through.
+	// upstreamFeed 是同一个答案的另一种形式，留给 API 说不行的时候：403（限流），或者一个只放
+	// 部分主机出去的代理。
 	upstreamFeed = "https://github.com/sganggs/Stronghold-Protocol/commits/master.atom"
 
-	// upstreamWait caps the question. It is a courtesy check on a title bar: a slow network should
-	// not delay anything, and an answer that arrives late is worth nothing.
+	// upstreamWait 是这一问的上限。它是一次给标题栏看的顺路检查：网络慢不该拖住任何东西，而一个
+	// 来迟了的答案一文不值。
 	upstreamWait = 10 * time.Second
 )
 
-// revisionPath is where this program remembers which commit it unpacked:
-// %LOCALAPPDATA%stronghold-protocol-launchergame-source.json。
+// revisionPath 是本程序记下「解包出来的是哪个 commit」的地方：
+// %LOCALAPPDATA%\stronghold-protocol-launcher\game-source.json。
 //
 // 放在数据目录而不是游戏目录里：游戏目录里的一切都是上游的东西，覆盖式解包会把它清掉；这个文件
 // 是本程序自己的账。
 func revisionPath() string { return filepath.Join(appDataDir(), "game-source.json") }
 
-// sourceRevision is what that file holds.
+// sourceRevision 是那个文件里装的东西。
 type sourceRevision struct {
 	// Hash 是完整的 commit hash；标题栏上显示的是它的前几位。
 	Hash string `json:"hash"`
@@ -55,7 +55,7 @@ type sourceRevision struct {
 	FetchedAt time.Time `json:"fetchedAt"`
 }
 
-// localRevision reads the recorded hash, or "" when there is nothing readable there.
+// localRevision 读出记下的那个 hash；那里没有能读的东西时给空串。
 //
 // 读不出来不是错误：第一次启动、或者用过老版本的程序，都还没有这个文件。那时标题栏不写 hash。
 func localRevision() string {
@@ -74,7 +74,7 @@ func localRevision() string {
 	return strings.TrimSpace(rev.Hash)
 }
 
-// saveRevision records which commit the source in game came from.
+// saveRevision 记下 game\ 里那份源码来自哪个 commit。
 //
 // 写不进去只是少一处显示，不该让取源码这件事失败——所以返回值给调用方，由它决定怎么记一笔。
 func saveRevision(hash string) error {
@@ -101,7 +101,7 @@ func shortHash(hash string) string {
 	return hash[:n]
 }
 
-// sameRevision tells whether two hashes are the same commit：大小写不算差别，hex 的大小写是写法问题。
+// sameRevision 说的是两个 hash 是不是同一个 commit：大小写不算差别，hex 的大小写只是写法问题。
 func sameRevision(a, b string) bool {
 	if a == "" || b == "" {
 		return false
@@ -109,13 +109,13 @@ func sameRevision(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// atomToken pulls the commit hash out of one entry of master.atom.
+// atomToken 从 master.atom 的一条 entry 里取出 commit hash。
 //
 // 那 feed 里每条 entry 都带着 <id>tag:github.com,2008:Grit::Commit/<hash></id>。取第一个就够：它
 // 是最新那条。这只是一个后备，所以模式写得直白一点，读的人一眼能看出它在找什么。
 var atomToken = regexp.MustCompile(`Grit::Commit/([0-9a-fA-F]{40})`)
 
-// upstreamRevision asks GitHub which commit master is on right now.
+// upstreamRevision 问 GitHub：master 此刻在哪一个 commit 上。
 func upstreamRevision() (string, error) {
 	client := &http.Client{Timeout: upstreamWait}
 
@@ -132,7 +132,7 @@ func upstreamRevision() (string, error) {
 	return hash, nil
 }
 
-// upstreamFromAPI reads the newest commit out of the REST endpoint.
+// upstreamFromAPI 从那个 REST 端点里读出最新的 commit。
 func upstreamFromAPI(client *http.Client) (string, error) {
 	body, err := getBody(client, upstreamCommit)
 	if err != nil {
@@ -150,7 +150,7 @@ func upstreamFromAPI(client *http.Client) (string, error) {
 	return commits[0].SHA, nil
 }
 
-// upstreamFromFeed reads it out of the branch's atom feed instead.
+// upstreamFromFeed 改从那个分支的 atom feed 里读。
 func upstreamFromFeed(client *http.Client) (string, error) {
 	body, err := getBody(client, upstreamFeed)
 	if err != nil {
@@ -163,7 +163,7 @@ func upstreamFromFeed(client *http.Client) (string, error) {
 	return string(match[1]), nil
 }
 
-// getBody fetches one of those two and hands back its body, not unbounded.
+// getBody 取上面那两个之一，把正文交回来，而不是不限量地交回来。
 func getBody(client *http.Client, url string) ([]byte, error) {
 	resp, err := client.Get(url)
 	if err != nil {

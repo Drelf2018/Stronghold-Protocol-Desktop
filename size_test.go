@@ -2,9 +2,8 @@ package main
 
 import "testing"
 
-// The size floor is "how big the page wants to be", not a proportion of the screen. These
-// settings are the narrowest the menus can be combined into: on 2560x1368, 屏幕高度 + 1/3 +
-// 9:16 comes to 256 pixels wide, narrower than the page can use.
+// 尺寸下限是「页面自己想多大」，不是屏幕的一个比例。下面这组参数是菜单能组合出来的最窄一种：
+// 在 2560x1368 上，屏幕高度 + 1/3 + 9:16 算出来只有 256 设备像素宽，比页面能用得上的还窄。
 func TestSizeFloor(t *testing.T) {
 	const screenW, screenH = 2560, 1368
 	minW, minH := minVisibleSize()
@@ -22,9 +21,8 @@ func TestSizeFloor(t *testing.T) {
 	}
 }
 
-// The other way round: ordinary sizes must not be touched by the floor. This is the set a first run
-// opens with - 屏幕宽度的 3/4, 16:9, which on 2560x1368 comes to 1920x1080 - and it is the one that has
-// to survive the floor, because a first run has nothing else to fall back on.
+// 反过来那一半：普通尺寸不该被下限碰到。这是第一次运行打开时用的那一组——屏幕宽度的 3/4、
+// 16:9，在 2560x1368 上是 1920x1080——而它必须能活着穿过下限，因为第一次运行没有别的东西可退。
 func TestSizeFloorLeavesOrdinarySizesAlone(t *testing.T) {
 	const screenW, screenH = 2560, 1368
 	ordinary := sizeState{anchor: screenWidth, share: share{3, 4}, ratio: ratio{16, 9}}
@@ -34,8 +32,8 @@ func TestSizeFloorLeavesOrdinarySizesAlone(t *testing.T) {
 	}
 }
 
-// The three settings now travel through window-state.json, so every value a menu offers has
-// to come back unchanged - otherwise the next run opens with the wrong entry ticked.
+// 三组设置现在要穿过 window-state.json 走一遭，所以菜单提供的每一个取值都必须原样回来——
+// 少一个，下一次运行就会在错的那一项上打勾。
 func TestSizeStateSurvivesTheFile(t *testing.T) {
 	for _, a := range anchors {
 		for _, sh := range shares {
@@ -50,8 +48,8 @@ func TestSizeStateSurvivesTheFile(t *testing.T) {
 	}
 }
 
-// A value the menus do not offer - from a later version, or a hand-edited file - has to be
-// refused, because a setting no entry matches would leave all three of them unticked.
+// 菜单不提供的取值——来自更新的版本，或者来自一个被人手改过的文件——必须被拒掉：一个哪一项都
+// 对不上的设置，会让那三项一个勾都没有。
 func TestSizeStateRejectsUnknownValues(t *testing.T) {
 	for _, d := range []sizeOnDisk{
 		{Anchor: -1, Share: [2]int{9, 16}, Ratio: [2]int{4, 3}},

@@ -2,8 +2,8 @@
 
 package main
 
-// The window's own thread: the procedure that receives its messages, and the queue of work
-// handed to it from the goroutines that must not touch WebView2 themselves.
+// 窗口自己的线程：接收它消息的那个过程，以及从那些不能亲自碰 WebView2
+// 的 goroutine 交给它的工作队列。
 
 import (
 	_ "embed"
@@ -12,15 +12,15 @@ import (
 	"time"
 )
 
-// wmRunOnWindowThread is the message Dispatch posts to the window. It is WM_APP, the value
-// go-webview2 wakes its own dispatch queue with: a window message carrying it does both jobs -
-// it runs what this app queued, and it lets the library flush what was queued through it.
+// wmRunOnWindowThread 是 Dispatch 投递给窗口的消息。它就是 WM_APP，
+// go-webview2 用来唤醒自己派发队列的那个值：携带它的窗口消息干两件事——
+// 运行本应用排入的工作，并让库把通过它排队的东西冲刷掉。
 const wmRunOnWindowThread = 0x8000
 
-// wndProc hides the window instead of closing it, so the tray survives a click on
-// the X, and it runs what Dispatch queued - this procedure is the window's thread, and it is
-// reached by whichever loop is pumping. Every other message goes to the procedure go-webview2
-// installed - including WM_GETMINMAXINFO, which is how the minimum size below takes effect.
+// wndProc 把窗口藏起来而不是关掉它，这样点 X 之后托盘还在；它还运行
+// Dispatch 排入的工作——这个过程就是窗口的线程，由当时正在泵消息的那个
+// 循环抵达。其余消息都交给 go-webview2 安装的过程——包括
+// WM_GETMINMAXINFO，下面那个最小尺寸正是靠它生效。
 func (win *webviewWindow) wndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 	if msg == wmRunOnWindowThread {
 		runOnWindowThread()
@@ -44,11 +44,11 @@ func (win *webviewWindow) wndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 
 func (win *webviewWindow) Navigate(url string) { win.w.Navigate(url) }
 
-// Reload asks the page to load itself again, at the address it is on right now.
+// Reload 请页面在它此刻所在的地址上重新加载自己。
 //
-// That address is the page's own, not the one the app would navigate to. The game keeps all of its
-// state inside the page, so 刷新 means "fetch this same page again", not "rebuild the address from
-// something the app remembered".
+// 那个地址是页面自己的，不是应用会导航过去的那个。游戏把全部状态都留在
+// 页面里，所以刷新的意思是「再取一次这个页面」，不是「从应用记住的
+// 什么东西重建地址」。
 //
 //go:embed js/reload.js
 var reloadJS string
@@ -57,28 +57,27 @@ func (win *webviewWindow) Reload() {
 	win.Dispatch(win.w.Eval, reloadJS)
 }
 
-// askForRoomJS is the prompt the join menu item puts up; the handler that runs it is in main.go. The
-// page is the only place this program can ask a question: there is no console, and a message box
-// cannot take a line of text back.
+// askForRoomJS 是加入菜单项弹出的提示；运行它的处理器在 main.go 里。
+// 页面是这个程序唯一能提问的地方：没有控制台，而消息框没法把一行文字收回来。
 //
 //go:embed js/askForRoom.js
 var askForRoomJS string
 
-// fullscreenJS reports the page's fullscreen state to Go. The game has its own fullscreen button, and
-// what that button does inside WebView2 is not enough on its own - see fullscreen.go.
+// fullscreenJS 把页面的全屏状态报告给 Go。游戏有自己的全屏按钮，而那个按钮
+// 在 WebView2 里的行为本身还不够——见 fullscreen.go。
 //
 //go:embed js/fullscreen.js
 var fullscreenJS string
 
-// Bind publishes a Go function to the page as window.<name>. It has to be registered before Run: it
-// is a script for every document about to be created, and the document already open is not one of
-// them. The one binding this program has is the page handing back what was typed into the join
-// prompt (see askForRoom).
+// Bind 把一个 Go 函数以 window.<name> 的形式发布给页面。它必须在 Run 之前
+// 注册：它是要为每个即将创建的文档执行的脚本，而已经打开的那个文档不算
+// 其中之一。这个程序唯一的绑定，就是页面把加入提示里输入的内容交回来
+// （见 askForRoom）。
 func (win *webviewWindow) Bind(name string, fn any) error { return win.w.Bind(name, fn) }
 
-// mutePageOn and mutePageOff are what Go says to the page when the window goes away and comes back.
-// They are written beside the script that defines _mutePage on purpose: one side renamed without
-// the other is not an error anywhere, it is simply sound that keeps playing - or never comes back.
+// mutePageOn 与 mutePageOff 是窗口消失和回来时 Go 对页面说的话。
+// 它们特意写在定义 _mutePage 的脚本旁边：只改了一边而没改另一边，
+// 在任何地方都不会报错，只是声音会一直响下去——或者再也回不来。
 const (
 	mutePageOn  = "window._mutePage && window._mutePage(true)"
 	mutePageOff = "window._mutePage && window._mutePage(false)"
@@ -87,18 +86,17 @@ const (
 //go:embed js/mute.js
 var muteJS string
 
-// setMuted stops the page's sound, or lets it come back.
+// setMuted 让页面的声音停下，或者让它回来。
 //
-// The close button hides the window, and a hidden window is still a visible *page*: WebView2 only
-// tells the page otherwise when the window is minimised, which is why minimising the game went
-// quiet and closing it did not. The page has its own handling for that (public/js/audio.js
-// suspends its AudioContext on visibilitychange); what it never gets from us is the event that
-// says so. This is the other way to the same place: the injected script holds every AudioContext
-// the page made and suspends or resumes them.
+// 关闭按钮把窗口藏起来，而藏起来的窗口仍然是一个可见的**页面**：只有当窗口
+// 最小化时 WebView2 才会告诉页面并非如此，这就是为什么最小化游戏会安静下来，
+// 而关闭它不会。页面对此有自己的处理（public/js/audio.js 会在
+// visibilitychange 时挂起它的 AudioContext）；它从我们这里永远得不到的，
+// 就是说明这件事的那个事件。这是通往同一处的另一条路：注入的脚本持有页面
+// 创建的每一个 AudioContext，并挂起或恢复它们。
 //
-// Eval rather than a binding: nothing comes back, and the page has no say in it. Both callers -
-// the window procedure and show - are already on the window's thread, which is where WebView2
-// calls belong.
+// 用 Eval 而不是绑定：不会有什么回来，页面也无从置喙。两个调用方——
+// 窗口过程和 show——已经在窗口的线程上，而 WebView2 调用正该在那里。
 func (win *webviewWindow) setMuted(on bool) {
 	if win == nil || win.w == nil {
 		return
@@ -110,32 +108,32 @@ func (win *webviewWindow) setMuted(on bool) {
 	win.w.Eval(script)
 }
 
-// The work waiting for the window's thread, and the lock that guards it.
+// 等待窗口线程的工作，以及守护它的锁。
 var (
 	uiMu    sync.Mutex
 	uiQueue []uiWork
 )
 
-// uiWork is one queued call and the moment it was queued, so that a call that ran late can say
-// how late it was.
+// uiWork 是一次排队的调用以及它入队的时刻，好让跑晚了的调用能说出
+// 自己晚了多久。
 type uiWork struct {
 	at time.Time
 	f  func()
 }
 
-// Dispatch runs f on the thread that owns the window: the one the message loop and the
-// WebView2 controller both live on. The menu's goroutines are not that thread, and a
-// controller call made from one of them does nothing at all.
+// Dispatch 在拥有窗口的那个线程上运行 f：消息循环和 WebView2 控制器
+// 都住在那个线程上。菜单的 goroutine 不是那个线程，从其中任一
+// goroutine 发出的控制器调用什么也做不了。
 //
-// It posts a message to the *window*, not to the thread (which is what the library's
-// Dispatch does). A thread message belongs to no window, so a modal loop - a menu, a message
-// box - retrieves it and DispatchMessageW has nothing to deliver it to; everything queued
-// behind it then waits for the next thing to post one. The rule is this one line.
+// 它把消息投递给*窗口*，而不是投递给线程（库自己的 Dispatch 是后者）。
+// 线程消息不属于任何窗口，所以模态循环——菜单、消息框——会取走它，
+// 而 DispatchMessageW 没有可投递的对象；其后排队的所有东西都要等下一件
+// 事情投递消息才会动。规则就是这么一行。
 //
-// The call and its argument are passed apart rather than closed over, so that the call which
-// will run is written at the call site instead of living inside a closure body - and so that
-// the argument goes through the compiler's type check against the function it is for. A body
-// that is not one call goes in as a closure taking an unused argument, as window_test.go does.
+// 调用和它的参数分开传递，而不是包进闭包，这样将要运行的调用写在调用点，
+// 而不是藏在闭包体里——也让参数能经受编译器针对它所属函数的类型检查。
+// 不是单个调用的函数体，就作为一个接收未用参数的闭包传入，window_test.go
+// 就是这么做的。
 func (win *webviewWindow) Dispatch[T any](f func(T), t T) {
 	uiMu.Lock()
 	uiQueue = append(uiQueue, uiWork{at: time.Now(), f: func() { f(t) }})
@@ -143,9 +141,9 @@ func (win *webviewWindow) Dispatch[T any](f func(T), t T) {
 	procPostMessageW.Call(win.hwnd, wmRunOnWindowThread, 0, 0)
 }
 
-// runOnWindowThread runs what Dispatch queued. It is called from the window procedure, which is
-// the window's thread by definition - the library's loop or a menu's modal loop, whichever is
-// pumping at that moment.
+// runOnWindowThread 运行 Dispatch 排入的工作。它从窗口过程被调用，而窗口
+// 过程按定义就是窗口的线程——库的循环或菜单的模态循环，当时哪个在泵
+// 消息就是哪个。
 func runOnWindowThread() {
 	uiMu.Lock()
 	queued := uiQueue

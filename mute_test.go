@@ -1,9 +1,8 @@
 package main
 
-// The injected mute script and the two lines of Go that call into it have to agree on the name.
-// A rename on one side is an error nowhere: it is sound that keeps playing when the window goes
-// away, or a game that stays silent after it comes back. The same check used to guard the
-// notification script this program no longer has.
+// 注入的那段静音脚本，和调用它的那两行 Go，必须在名字上一致。单方面改名不会在任何地方报错：
+// 表现只会是窗口关掉之后声音还响着，或者窗口回来了游戏却一直静着。这条检查以前也看着一段通知
+// 脚本，而那段脚本这个程序已经没有了。
 
 import (
 	"strings"

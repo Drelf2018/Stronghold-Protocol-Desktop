@@ -7,8 +7,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// runValue reads the command that is written in there right now; nothing to read means
-// empty.
+// runValue 读出此刻写在那里的那条命令；没有可读的，就是空。
 func runValue(t *testing.T) string {
 	t.Helper()
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
@@ -23,14 +22,12 @@ func runValue(t *testing.T) string {
 	return command
 }
 
-// putRunValue writes exactly this command into the startup entry, and removes the entry when
-// the command is empty.
+// putRunValue 把这一条命令原样写进启动项；命令为空时把那一项删掉。
 //
-// The string goes in as it stands rather than through setAutostart, because a test that has to
-// put back what it found must not write what the program would write today. setAutostart
-// writes the path of the running executable, and under go test that is a binary in a temporary
-// build directory: leaving one behind would point the user's autostart at a folder that is
-// about to be deleted, and nothing would say a word at the next logon.
+// 这里直接塞字符串，而不是走 setAutostart：一条「要把原样放回去」的测试，不能写程序今天会写的
+// 那个值。setAutostart 写的是正在跑的那个可执行文件的路径，而在 go test 下那是一个临时构建目录
+// 里的二进制——留下它就会把用户的自启动指向一个马上要被删掉的目录，而下一次登录时没有任何东西
+// 会说一句话。
 func putRunValue(t *testing.T, command string) {
 	t.Helper()
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
@@ -49,8 +46,7 @@ func putRunValue(t *testing.T, command string) {
 	}
 }
 
-// restoreRun puts the startup entry back exactly as it was found - a command, or no entry at
-// all - when the test ends.
+// restoreRun 在测试结束时，把启动项原样放回去——一条命令，或者根本没有那一项。
 func restoreRun(t *testing.T) {
 	t.Helper()
 	before := runValue(t)
@@ -62,9 +58,8 @@ func restoreRun(t *testing.T) {
 	})
 }
 
-// Autostart is written into the registry, so this test really writes, really reads back, and
-// restores what it found. What it checks is the thing the menu has to show: the tick state
-// comes from what the registry really holds, not from an intention kept in memory.
+// 自启动是写进注册表的，所以这条测试是真的写、真的读回来，再把原样放回去。它查的正是菜单必须
+// 显示的那件事：那个勾来自注册表里**真实**有的东西，不是内存里存着的一个意图。
 func TestAutostart(t *testing.T) {
 	restoreRun(t)
 
@@ -92,10 +87,9 @@ func TestAutostart(t *testing.T) {
 	}
 }
 
-// An entry written before the program was moved or renamed still holds a value, but the
-// command in it starts nothing. It has to read as not set - the tick is a promise about the
-// next logon - and the click after it has to repair the entry rather than remove it, which is
-// only true if the stale entry counts as "off" to begin with.
+// 一份在程序被搬走或改名之前写下的启动项，值还在，但里面那条命令什么都启动不了。它必须读作
+// 「没有启用」——那个勾是对下一次登录的承诺——而紧接着的那一次点击要修好这一项，而不是把它删掉；
+// 而这一点只有在旧项一开始就算作「关」的时候才成立。
 func TestAutostartStaleEntry(t *testing.T) {
 	restoreRun(t)
 

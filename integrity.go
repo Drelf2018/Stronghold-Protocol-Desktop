@@ -2,16 +2,16 @@
 
 package main
 
-// What integrity level this process is running at, and what that implies.
+// 本进程跑在什么完整性级别，以及那意味着什么。
 //
-// It is worth measuring because it decides what the process may write, independently of the ACLs:
-// a low-integrity process cannot write anywhere in the user profile at all - not %LOCALAPPDATA%,
-// not even %TEMP%, because those are medium - and WebView2 cannot create its user data folder
-// either. A sandbox, a restricted token, or a launcher that hands one out is what puts a process
-// at that level.
+// 值得量一量，因为它独立于 ACL 决定进程能写什么：
+// 低完整性进程在用户目录里根本哪儿都写不了——%LOCALAPPDATA% 不行，
+// %TEMP% 也不行，因为那些是 medium——WebView2 也建不出自己的用户数据目录。
+// 沙箱、受限令牌，或者一个把受限令牌发出去的启动器，才会把进程
+// 放到那个级别。
 //
-// That combination is the confusing one: "Access is denied" from a directory whose ACL grants
-// FullControl. This is the missing half of that explanation, and it costs one log line to have.
+// 这种组合才叫人困惑：从一个 ACL 明明授予了 FullControl
+// 的目录里得到「Access is denied」。这就是那套解释缺的另一半，而它只值一行日志。
 
 import (
 	"unsafe"
@@ -19,8 +19,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// processIntegrity names the level the current process runs at: "untrusted", "low", "medium",
-// "high", "system", or "unknown" when the token cannot be asked.
+// processIntegrity 命名当前进程所处的级别：「untrusted」「low」「medium」
+// 「high」「system」，取不到令牌时是「unknown」。
 func processIntegrity() string {
 	var token windows.Token
 	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token); err != nil {
@@ -33,8 +33,8 @@ func processIntegrity() string {
 	if err := windows.GetTokenInformation(token, windows.TokenIntegrityLevel, &buf[0], uint32(len(buf)), &size); err != nil {
 		return "unknown"
 	}
-	// TOKEN_MANDATORY_LABEL { SID_AND_ATTRIBUTES Label }: the header holds a pointer to the SID,
-	// and the SID itself sits after it inside the same buffer.
+	// TOKEN_MANDATORY_LABEL { SID_AND_ATTRIBUTES Label }：头部存着一个指向 SID 的指针，
+	// 而 SID 本身就在同一个缓冲区里、紧跟在它后面。
 	label := (*windows.SIDAndAttributes)(unsafe.Pointer(&buf[0]))
 	sid := label.Sid
 	if sid == nil || sid.SubAuthorityCount() == 0 {
@@ -54,10 +54,10 @@ func processIntegrity() string {
 	}
 }
 
-// integrityNote is the sentence a message box adds: the level itself, and - when it is one that
-// cannot write the user's own profile - what that means and what to do about it. Neither of the
-// levels below is what a person gets by double-clicking, so naming the cause here is the whole
-// difference between a mysterious failure and an actionable one.
+// integrityNote 是消息框追加的那句话：级别本身，以及——当它是写不了用户自己目录
+// 的级别时——那意味着什么、该怎么办。下面这两个级别都不是双击能得到的，
+// 所以在这里点明原因，就是「让人觉得莫名其妙的失败」与「能照着解决的失败」之间的
+// 全部差别。
 func integrityNote(level string) string {
 	if level == "low" || level == "untrusted" {
 		return "\n\n本进程的完整性级别是 " + level + "：这个级别的进程写不进用户目录（%LOCALAPPDATA%、%TEMP% 都是 medium），" +

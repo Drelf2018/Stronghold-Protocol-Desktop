@@ -2,12 +2,12 @@
 
 package main
 
-// The size the 参考尺寸 / 相对占比 / 宽高比 menus describe, and the arithmetic that turns
-// those three into a window size on a screen of a given size.
+// 参考尺寸 / 相对占比 / 宽高比 这三个菜单所描述的尺寸，以及把这三者
+// 换算成给定屏幕上的窗口大小的算术。
 //
-// It is kept apart from the menu that drives it (main.go) and the window it sizes
-// (window.go) because it is plain arithmetic: no Win32, no WebView2, nothing that has to
-// be running for it to be right.
+// 它与驱动它的菜单（main.go）和它为其定尺寸的窗口（window.go）分开放置，
+// 因为它只是纯粹的算术：不涉及 Win32、不涉及 WebView2，也不需要有什么
+// 正在运行才能保证它正确。
 
 import (
 	"fmt"
@@ -15,15 +15,15 @@ import (
 	"sync"
 )
 
-// titled is a value a menu can be filled with: it knows the label it is drawn as.
-// comparable is what lets a group find the entry that was picked.
+// titled 是一种能用来填充菜单的值：它知道自己被画成什么标签。
+// comparable 让它所属的那一组能找出被选中的条目。
 type titled interface {
 	comparable
 	title() string
 }
 
-// anchor is the screen edge the window follows: 相对占比 applies to this edge, and
-// 宽高比 derives the other one from it.
+// anchor 是窗口所跟随的屏幕边：相对占比作用在这条边上，
+// 宽高比则从它推出另一条边。
 type anchor int
 
 const (
@@ -42,25 +42,22 @@ func (a anchor) title() string {
 	}
 }
 
-// share is the part of the reference edge the window takes, kept as the exact
-// fraction p/q: the window size is computed from those two numbers, never from the
-// label. The label only adds the whole percentage p/q rounds to.
+// share 是窗口占参考边的比例，以精确分数 p/q 保存：窗口大小由这两个数
+// 算出，绝不来自标签。标签只补上 p/q 四舍五入得到的整数百分比。
 type share struct {
 	numerator   int
 	denominator int
 }
 
-// title is the label as the menu draws it. The tab between the fraction and the
-// percentage is not decoration: Windows hands whatever follows a tab to the menu's
-// accelerator column and right-aligns it, which is the only way to line these up in
-// a proportional font. Padding cannot do it - a digit is 7px wide and a space 4px -
-// and no filler character stays exactly one digit wide across fonts and sizes.
+// title 是菜单绘制时用的标签。分数与百分比之间的制表符不是装饰：
+// Windows 会把制表符后面的内容交给菜单的快捷键列并右对齐，这是在比例字体里
+// 把它们对齐的唯一办法。用空格补不出来——一个数字宽 7px，一个空格 4px——
+// 也没有哪个填充字符能在各种字体和字号下都恰好占一个数字宽。
 func (s share) title() string {
 	return fmt.Sprintf("%s\t(%d%%)", s.fraction(), s.percent())
 }
 
-// fraction is the exact proportion written out, "5/8", or just "1" for the whole
-// edge.
+// fraction 是写出来的精确比例，「5/8」，整条边则只是「1」。
 func (s share) fraction() string {
 	if s.denominator == 1 {
 		return fmt.Sprintf("%d", s.numerator)
@@ -68,13 +65,12 @@ func (s share) fraction() string {
 	return fmt.Sprintf("%d/%d", s.numerator, s.denominator)
 }
 
-// percent is p/q rounded to the nearest whole percent.
+// percent 是 p/q 四舍五入到最接近的整数百分比。
 func (s share) percent() int {
 	return (s.numerator*100 + s.denominator/2) / s.denominator
 }
 
-// ratio is the window's width against its height, kept as the exact pair 宽高比 is
-// computed from.
+// ratio 是窗口的宽与高之比，以精确的数对保存，宽高比正是由它算出的。
 type ratio struct {
 	width  int
 	height int
@@ -84,13 +80,13 @@ func (r ratio) title() string {
 	return fmt.Sprintf("%d: %d\t(%d%%)", r.width, r.height, r.percent())
 }
 
-// percent is p/q rounded to the nearest whole percent.
+// percent 是 p/q 四舍五入到最接近的整数百分比。
 func (r ratio) percent() int {
 	return (r.width*100 + r.height/2) / r.height
 }
 
-// The entries of the three menus, top to bottom. 相对占比 runs smallest first and
-// ends at 1; every fraction is already reduced.
+// 三个菜单的条目，自上而下。相对占比从最小的开始，到 1 结束；
+// 每个分数都已经约分。
 var (
 	anchors = []anchor{screenWidth, screenHeight}
 	shares  = []share{
@@ -116,24 +112,24 @@ var (
 	}
 )
 
-// sizeState is what the three menus add up to: which screen edge the share applies
-// to, how much of that edge the window takes, and the shape of the other edge.
+// sizeState 是这三个菜单合起来的意思：相对占比作用在哪条屏幕边、
+// 窗口占这条边的多少，以及另一条边的形状。
 type sizeState struct {
 	anchor anchor
 	share  share
 	ratio  ratio
 }
 
-// sizeOnDisk is sizeState in the shape window-state.json keeps: exported fields, so the
-// encoder can see them, and the fractions as pairs of numbers. sizeState itself is all
-// unexported and cannot be written out as it stands.
+// sizeOnDisk 是 sizeState 在 window-state.json 里的形态：字段导出，
+// 好让编码器看得见，分数则是成对的数字。sizeState 本身全部未导出，
+// 原样是写不出去的。
 type sizeOnDisk struct {
-	Anchor int    `json:"anchor"` // 0 is screen width, 1 is screen height
-	Share  [2]int `json:"share"`  // numerator, denominator
-	Ratio  [2]int `json:"ratio"`  // width, height
+	Anchor int    `json:"anchor"` // 0 是屏幕宽度，1 是屏幕高度
+	Share  [2]int `json:"share"`  // 分子、分母
+	Ratio  [2]int `json:"ratio"`  // 宽、高
 }
 
-// onDisk is the form to write down.
+// onDisk 是写下去时用的形式。
 func (s sizeState) onDisk() sizeOnDisk {
 	index := 0
 	for i, a := range anchors {
@@ -148,12 +144,11 @@ func (s sizeState) onDisk() sizeOnDisk {
 	}
 }
 
-// state is the form to read back, and it answers false for anything the menus do not offer.
+// state 是读回来时用的形式，凡是菜单不提供的值它都答 false。
 //
-// The check matters more than it looks: a value that is not in anchors, shares or ratios
-// gives the menus an entry they cannot tick, so the window would open with none of the three
-// settings shown as chosen. A file written by a later version, or edited by hand, falls back
-// to the caller's defaults instead.
+// 这个检查比看上去更重要：不在 anchors、shares 或 ratios 里的值会让菜单
+// 得到一个勾不上的条目，于是窗口打开时三项设置没有一项显示为已选中。
+// 由更晚的版本写出、或被手工改过的文件，则退回调用方的默认值。
 func (d sizeOnDisk) state() (sizeState, bool) {
 	if d.Anchor < 0 || d.Anchor >= len(anchors) {
 		return sizeState{}, false
@@ -169,28 +164,27 @@ func (d sizeOnDisk) state() (sizeState, bool) {
 	return s, true
 }
 
-// The smallest visible size the menus can work out to, said in CSS pixels: this is the floor
-// the page wants, not a proportion of the screen.
+// 这些菜单能算出的最小可见尺寸，以 CSS 像素表示：这是页面要求的下限，
+// 不是屏幕的某个比例。
 //
-// Below it the chat interface starts scrolling sideways, and any shorter and not even the
-// input box is visible; the menus themselves can be combined into smaller numbers - 屏幕高度
-// + 1/3 + 9:16 leaves only 256x456 visible on 2560x1368, narrower than this. So the floor is
-// clamped here rather than trusting the user not to pick that combination.
+// 低于它，聊天界面就会横向滚动，再矮一点连输入框都看不见；菜单本身
+// 可以组合出更小的数字——屏幕高度 + 1/3 + 9:16 在 2560x1368 上只留下
+// 256x456 可见，比这个还窄。所以下限在这里夹住，而不是指望用户不去
+// 选那种组合。
 const (
 	minVisibleWidth  = 480
 	minVisibleHeight = 360
 )
 
-// smallIconSize is the edge the notification area draws at: SM_CXSMICON, which follows the
-// display scaling (16 at 100%, 20 at 125%, 24 at 150%).
+// smallIconSize 是通知区域绘制所用的边长：SM_CXSMICON，它跟随
+// 显示缩放（100% 时 16，125% 时 20，150% 时 24）。
 //
-// Two things come out of it: the tray icon, and the window's own icons (title bar, taskbar,
-// Alt+Tab). Both are drawn at the size they will be drawn, because Windows does not scale up what
-// it is handed.
+// 它有两处用途：托盘图标，以及窗口自己的图标（标题栏、任务栏、
+// Alt+Tab）。两者都按最终绘制的尺寸画，因为 Windows 不会把交给它的东西放大。
 //
-// It lives here rather than in internal/artwork because it is the one part of the drawing that asks
-// Windows something, and that package is deliberately platform-independent - it has to be, because
-// the release workflow runs its generator on Linux.
+// 它放在这里而不是 internal/artwork，因为它是绘制中唯一向 Windows
+// 提问的部分，而那个包刻意保持平台无关——必须如此，因为发布流程
+// 在 Linux 上运行它的生成器。
 func smallIconSize() int {
 	if got, _, _ := procGetSystemMetrics.Call(smCXSmallIcon); got > 0 {
 		return int(got)
@@ -198,9 +192,8 @@ func smallIconSize() int {
 	return 16
 }
 
-// displayScale is the display scaling factor, read from SM_CXSMICON: that metric is 16 pixels
-// at 96 dpi and follows the scaling after that (24 at 150%). The icon code already uses the
-// same metric.
+// displayScale 是显示缩放系数，从 SM_CXSMICON 读出：该指标在 96 dpi 时
+// 是 16 像素，之后随缩放变化（150% 时 24）。图标代码用的已经是同一个指标。
 func displayScale() int {
 	if got, _, _ := procGetSystemMetrics.Call(smCXSmallIcon); got > 0 {
 		return max(int(got)/16, 1)
@@ -208,26 +201,25 @@ func displayScale() int {
 	return 1
 }
 
-// minVisibleSize is that floor converted into device pixels: the page lays out in CSS pixels,
-// so the more scaling there is, the more device pixels the same content takes.
+// minVisibleSize 是把那个下限换算成设备像素：页面按 CSS 像素布局，
+// 所以缩放越大，同样的内容占用的设备像素就越多。
 func minVisibleSize() (int, int) {
 	scale := displayScale()
 	return minVisibleWidth * scale, minVisibleHeight * scale
 }
 
-// windowSize is the visible frame these settings describe on a screen of the given
-// size — the rectangle the user sees, not the client area and not the window rect.
-// The reference edge gets the share of the screen; 宽高比 gives the other edge.
+// windowSize 是这些设置在给定大小的屏幕上描述的可见边框——用户看到的
+// 那个矩形，不是客户区，也不是窗口矩形。参考边分得屏幕的相应比例；
+// 宽高比给出另一条边。
 //
-// Each edge is clamped to the floor on its own: the ratio is given up rather than a size the
-// page cannot use being handed out.
+// 每条边各自夹到下限：宁可放弃比例，也不交出一个页面用不了的尺寸。
 func (s sizeState) windowSize(screenW, screenH int) (int, int) {
 	width, height := s.shapedSize(screenW, screenH)
 	minW, minH := minVisibleSize()
 	return max(width, minW), max(height, minH)
 }
 
-// shapedSize is the size the three menus describe, before the floor is applied.
+// shapedSize 是三个菜单描述的尺寸，尚未应用下限。
 func (s sizeState) shapedSize(screenW, screenH int) (int, int) {
 	if s.anchor == screenHeight {
 		height := screenH * s.share.numerator / s.share.denominator
@@ -242,23 +234,23 @@ var (
 	size   sizeState
 )
 
-// currentSize is the settings the menus currently describe.
+// currentSize 是菜单当前描述的设置。
 func currentSize() sizeState {
 	sizeMu.Lock()
 	defer sizeMu.Unlock()
 	return size
 }
 
-// storeSize records settings without touching the window. Startup uses it to hand the menus
-// the defaults they open with, so that the current entry is ticked and a later click has
-// real numbers to work from; loadAndStoreSize is the one that also resizes.
+// storeSize 只记录设置，不碰窗口。启动时用它把菜单打开时的默认值交给菜单，
+// 好让当前条目被勾上，之后点击时也有真实的数字可用；
+// loadAndStoreSize 才是同时调整窗口大小的那个。
 func storeSize(s sizeState) {
 	sizeMu.Lock()
 	defer sizeMu.Unlock()
 	size = s
 }
 
-// setSize stores new settings, then resizes the window to match.
+// setSize 保存新的设置，然后把窗口调整到匹配的大小。
 func loadAndStoreSize(fn func(*sizeState)) {
 	sizeMu.Lock()
 	defer sizeMu.Unlock()

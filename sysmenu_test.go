@@ -8,14 +8,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The system menu's command ids have two rules, and breaking either one causes trouble whose
-// symptom is a long way from its cause:
+// 系统菜单的命令 id 有两条规矩，破哪一条都会出问题，而出问题的表现离原因很远：
 //
-//  1. The low four bits must be 0: WM_SYSCOMMAND uses them as an internal marker and clears
-//     them on arrival, so 0xF101 becomes 0xF100 and two items collide.
-//  2. 0xF000-0xF180 must be avoided: those are the system's own SC_* command numbers. Landing
-//     on SC_RESTORE (0xF120) has a very concrete consequence - 还原 is greyed out by the
-//     system while the window is not maximised, and our item goes dead with it.
+//  1. 低四位必须是 0：WM_SYSCOMMAND 拿它们当内部标记，收到时会抹掉，于是 0xF101 变成 0xF100，
+//     两项就撞在一起了。
+//  2. 要避开 0xF000–0xF180：那是系统自己的 SC_* 命令号。撞上 SC_RESTORE（0xF120）的后果非常
+//     具体——窗口不是最大化时，系统会把「还原」置灰，而我们那一项跟着一起失效。
 func TestSystemMenuIDs(t *testing.T) {
 	ids := []struct {
 		name string
@@ -43,8 +41,8 @@ func TestSystemMenuIDs(t *testing.T) {
 	}
 }
 
-// systemMenuForTest makes a window with a system menu and hands back both. It is made and
-// thrown away, never shown - the same trick measureFrameEdges uses to look at a frame.
+// systemMenuForTest 造一个带系统菜单的窗口，把两者都交回来。它建了就扔，从不显示——
+// measureFrameEdges 看边框用的是同一个办法。
 func systemMenuForTest(t *testing.T) (uintptr, uintptr) {
 	t.Helper()
 	instance, _, _ := procGetModuleHandleW.Call(0)
@@ -77,18 +75,17 @@ func systemMenuForTest(t *testing.T) (uintptr, uintptr) {
 	return menu, hwnd
 }
 
-// The menu as it is really assembled, on a real window's real system menu. What it pins is
-// the shape a person sees: this program's three window items on top, then Windows' own, then
-// this program's again with the size settings, then the system's last separator and 关闭.
+// 菜单真正被装出来的样子，装在一个真实窗口的真实系统菜单上。它钉住的是人看到的那副形状：
+// 最上面是本程序那三项窗口操作，然后是 Windows 自己的，再接着是本程序的尺寸设置，最后是系统
+// 那一条分隔线和「关闭」。
 //
-// It is a test rather than a comment because that shape is arithmetic. The place the size
-// group goes is derived from the menu itself, and getting it wrong does not fail loudly - it
-// puts the group in the wrong half of the menu, between 最小化 and 最大化 say, and the menu
-// only looks a little odd.
+// 这是一条测试而不是注释，因为那副形状是算术。尺寸那一组该插在哪里是从菜单本身推出来的，而推
+// 错了不会响亮地失败——它只会把那一组放进菜单的错误一半，比如夹在「最小化」和「最大化」之间，
+// 而菜单只是看着有点怪。
 func TestSystemMenuLayout(t *testing.T) {
 	menu, hwnd := systemMenuForTest(t)
 
-	// installSystemMenu asks for the sizes the menus describe.
+	// installSystemMenu 会去要菜单所描述的那几组尺寸。
 	before := currentSize()
 	t.Cleanup(func() { storeSize(before) })
 	storeSize(sizeState{})
@@ -171,8 +168,8 @@ func TestRepeatedAcceleratorIsFound(t *testing.T) {
 	}
 }
 
-// acceleratorOf reads the letter a label answers to: the one Windows underlines, which the label
-// carries in parentheses. A separator, and anything without a mnemonic, has none.
+// acceleratorOf 读出某个标签应答的那个字母：Windows 会给它加下划线，而标签把它写在括号里。
+// 分隔线、以及任何没有助记键的东西，都没有。
 func acceleratorOf(label string) (rune, bool) {
 	at := strings.Index(label, "(")
 	if at < 0 {
@@ -185,8 +182,8 @@ func acceleratorOf(label string) (rune, bool) {
 	return letters[0], true
 }
 
-// firstRepeatedAccelerator reports the first letter that two labels share, with both labels, in
-// the order they appear in the menu.
+// firstRepeatedAccelerator 报出第一个被两个标签共用的字母，附带那两个标签，按它们在菜单里出现
+// 的先后。
 func firstRepeatedAccelerator(labels []string) (rune, string, string, bool) {
 	used := make(map[rune]string, len(labels))
 	for _, label := range labels {

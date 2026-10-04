@@ -2,13 +2,12 @@
 
 package main
 
-// The WebView2 window and the Win32 it sits on: how it is built, the frame DWM draws
-// around it, the two rectangles that frame makes it easy to confuse, and the message
-// procedure that turns a click on the X into a hide.
+// WebView2 窗口，以及它身下的 Win32：窗口怎么建起来、DWM 在它周围画的边框、
+// 那圈边框让两个矩形容易被混淆，还有那个把点 X 变成隐藏的消息过程。
 //
-// Everything the app's own size menus ask for lands here as a visible frame, and
-// everything Win32 asks for is a window rect. frameEdges is the difference, measured on
-// this window rather than assumed, and moveVisible is the single place it is applied.
+// 本程序自己的尺寸菜单要的一切，落到这里都是可见框；Win32 要的一切都是 window rect。
+// frameEdges 就是两者之差，是在这个窗口上量出来的、不是猜的；moveVisible 是唯一应用
+// 它的地方。
 
 import (
 	"fmt"
@@ -62,37 +61,36 @@ const (
 	swHide    = 0
 	swRestore = 9
 
-	// SW_SHOWMAXIMIZED, for reopening a window the user left maximised.
+	// SW_SHOWMAXIMIZED：用来重新打开用户离开时处于最大化状态的窗口。
 	swShowMaximized = 3
 
-	// SW_SHOWNORMAL, what the shell is asked for when it opens something.
+	// SW_SHOWNORMAL：让 shell 打开某个东西时向它要的显示方式。
 	swShownormal = 1
 
 	wmClose = 0x0010
 
-	// GWLP_WNDPROC, which is -4 as a LONG_PTR.
+	// GWLP_WNDPROC，作为 LONG_PTR 是 -4。
 	gwlpWndProc = ^uintptr(3)
 
-	// GWL_EXSTYLE, which is -20 as a LONG_PTR, and WS_EX_TOPMOST inside it.
+	// GWL_EXSTYLE，作为 LONG_PTR 是 -20，WS_EX_TOPMOST 就在这里面。
 	gwlExStyle  = ^uintptr(19)
 	wsExTopmost = 0x0008
 
-	// WM_SETICON, and the two slots a window keeps an icon in: ICON_SMALL for the title
-	// bar, ICON_BIG for the taskbar and Alt+Tab.
+	// WM_SETICON，以及窗口存图标用的两个槽位：ICON_SMALL 给标题栏，
+	// ICON_BIG 给任务栏和 Alt+Tab。
 	wmSetIcon     = 0x0080
 	iconSlotSmall = 0
 	iconSlotBig   = 1
 
-	// GCLP_HICON and GCLP_HICONSM: the same two pictures on the window class, where a
-	// shell that asks the class rather than the window finds them.
+	// GCLP_HICON 与 GCLP_HICONSM：同样两张图挂在窗口类上，给那种向类而不是向窗口
+	// 要图标的 shell 用。
 	gclpHIcon      = ^uintptr(13)
 	gclpHIconSmall = ^uintptr(33)
 
-	// WM_SYSCOMMAND: the message the system menu sends back. Picking the items we appended to
-	// it comes through here too.
+	// WM_SYSCOMMAND：系统菜单回送的消息。选中我们追加进去的菜单项，也走这里。
 	wmSysCommand = 0x0112
 
-	// The flags AppendMenuW and CheckMenuItem use.
+	// AppendMenuW 与 CheckMenuItem 用的标志位。
 	mfString     = 0x0000
 	mfByPosition = 0x0400
 	mfSeparator  = 0x0800
@@ -100,7 +98,7 @@ const (
 	mfChecked    = 0x0008
 	mfUnchecked  = 0x0000
 
-	// The version of the icon resource format CreateIconFromResourceEx reads.
+	// CreateIconFromResourceEx 读取的图标资源格式的版本。
 	iconResourceVersion = 0x00030000
 
 	swpNoSize     = 0x0001
@@ -108,28 +106,28 @@ const (
 	swpNoZOrder   = 0x0004
 	swpNoActivate = 0x0010
 
-	// HWND_TOPMOST and HWND_NOTOPMOST: the two places SetWindowPos can put a window.
+	// HWND_TOPMOST 与 HWND_NOTOPMOST：SetWindowPos 能把窗口放到的两个位置。
 	hwndTopmost    = ^uintptr(0)
 	hwndNotTopmost = ^uintptr(1)
 
 	dwmwaExtendedFrameBounds = 9
 	spiGetWorkArea           = 0x0030
 
-	// SM_CXSCREEN, SM_CYSCREEN: the primary display.
+	// SM_CXSCREEN、SM_CYSCREEN：主显示器的尺寸。
 	smCXScreen = 0
 	smCYScreen = 1
 
-	// SM_CXICON and SM_CXSMICON: the width of the icons a window is asked for, scaled to
-	// the display. They are 32 and 16 at 100%, 48 and 24 at 150%.
+	// SM_CXICON 与 SM_CXSMICON：向窗口索取的图标宽度，按显示器缩放。100% 时是 32 和 16，
+	// 150% 时是 48 和 24。
 	smCXIcon      = 11
 	smCXSmallIcon = 49
 
-	// WS_OVERLAPPEDWINDOW, the style go-webview2 gives the real window: the frame DWM
-	// draws depends on it, so the throwaway window in measureFrameEdges wears it too.
+	// WS_OVERLAPPEDWINDOW，go-webview2 给真窗口的那个样式：DWM 画的边框取决于它，
+	// 所以 measureFrameEdges 里那个用完就扔的窗口也戴着它。
 	wsOverlappedWindow = 0x00CF0000
 
-	// shadowClassName names that throwaway window's class. Nothing else uses it, so it
-	// cannot collide with the class go-webview2 registers for the real one.
+	// shadowClassName 是那个用完就扔的窗口的类名。没有别的东西用它，所以不会和
+	// go-webview2 为真窗口注册的那个类撞上。
 	shadowClassName = "systrayExampleShadow"
 )
 
@@ -140,9 +138,8 @@ func (r rect) height() int32 { return r.bottom - r.top }
 
 type point struct{ x, y int32 }
 
-// windowPlacement is WINDOWPLACEMENT, whose rcNormalPosition is the rectangle the
-// window returns to when it is restored the right rectangle to remember, even
-// while the window is maximised or minimised.
+// windowPlacement 就是 WINDOWPLACEMENT，它的 rcNormalPosition 是窗口被还原时回到的
+// 那个矩形——要记住的正是它，哪怕窗口正处在最大化或最小化状态。
 type windowPlacement struct {
 	length           uint32
 	flags            uint32
@@ -152,7 +149,7 @@ type windowPlacement struct {
 	rcNormalPosition rect
 }
 
-// wndClassEx is WNDCLASSEXW, for the throwaway window in measureFrameEdges.
+// wndClassEx 就是 WNDCLASSEXW，给 measureFrameEdges 里那个用完就扔的窗口用。
 type wndClassEx struct {
 	size       uint32
 	style      uint32
@@ -168,46 +165,42 @@ type wndClassEx struct {
 	iconSm     uintptr
 }
 
-// frameEdges is the border DWM draws outside the visible frame, per side: the
-// window rect is the visible frame grown by these. The thickness follows the theme
-// and the Windows version, so it is measured rather than assumed, and it is not the
-// same on every side.
+// frameEdges 是 DWM 画在可见框外面的边框，按边记：window rect 就是可见框往外长这么多。
+// 厚度随主题和 Windows 版本变化，所以是量出来的而不是猜的，而且每一边都不一样。
 type frameEdges struct{ left, top, right, bottom int32 }
 
-// webviewWindow is the app's main window, hosted by WebView2.
+// webviewWindow 是本程序的主窗口，由 WebView2 承载。
 //
-// Three rectangles describe one window, and mixing them is where "I set 1000 and
-// measured 984" comes from:
+// 一个窗口有三个矩形在描述它，把它们搞混就是「我设了 1000，量出来却是 984」的
+// 来源：
 //
-//	window rect   CreateWindowExW / SetWindowPos   title bar, borders, and the invisible
-//	                                              resize border DWM draws around it
-//	visible frame DwmGetWindowAttribute           what the eye and a screenshot get
-//	client area   GetClientRect                   what the page renders into
+//	window rect   CreateWindowExW / SetWindowPos   标题栏、边框，以及 DWM 在它周围
+//	                                              画的那圈看不见的缩放边框
+//	visible frame DwmGetWindowAttribute           眼睛和截图得到的
+//	client area   GetClientRect                   页面渲染进去的
 //
-// The window is built and remembered in window rects, so the size it opens with is
-// the size it was left at, exactly. The menus are the exception: they describe a share
-// of the screen the way a person would, so SetVisibleSize converts through edges -
-// the border measured on this window at creation, never assumed.
+// 窗口按 window rect 建起来、也按 window rect 记住，所以它打开时的尺寸就是上次离开时的
+// 尺寸，分毫不差。菜单是例外：它们是按人的方式描述屏幕占比的，所以 SetVisibleSize 要
+// 过一遍边框——用的是创建时在这个窗口上量到的边框，从不猜。
 type webviewWindow struct {
 	w        webview2.WebView
 	hwnd     uintptr
-	previous uintptr // the window procedure this one replaced
+	previous uintptr // 被这一个替换掉的窗口过程
 	edges    frameEdges
 }
 
-// newWindow creates the WebView2 window at the size state describes, centred on the screen, and
-// leaves it visible: it is the interface, and 显示窗口 brings it back once it is closed. It
-// returns nil when the WebView2 runtime is missing or the window cannot be created, which main
-// treats as fatal.
+// newWindow 按 state 描述的尺寸创建 WebView2 窗口，居中放在屏幕上，并让它可见：它就是界面，
+// 关掉之后「显示窗口」能把它叫回来。WebView2 运行时缺失或窗口建不起来时返回 nil，
+// main 把这当作致命错误。
 //
-// Nothing moves it afterwards - it is built at the size it will keep, so there is no first
-// frame at the wrong place or size.
+// 之后没有任何东西再动它——建出来就是它要一直保持的尺寸，所以不存在第一帧位置或尺寸不对的
+// 情况。
 func newWindow(state windowState) *webviewWindow {
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		DataPath: appDataDir(),
-		// Debug 打开 WebView2 的开发者工具和页面自己的右键菜单：库就是把它交
-		// AreDevToolsEnabled AreDefaultContextMenusEnabled 的。留成零值（原来的样子）时，
-		// F12 什么都打不开，页面也没有自己的右键菜单
+		// Debug 就是页面的两个开关：库（webview.go:118/123）把它直接交给
+		// AreDefaultContextMenusEnabled 与 AreDevToolsEnabled。写成 true，页面的右键菜单与 F12
+		// 的开发者工具就是开的——这是个游戏，那两样对报障的人有用；留成零值则两样都没有。
 		Debug: true,
 		WindowOptions: webview2.WindowOptions{
 			Title:  appName,
@@ -256,14 +249,13 @@ func newWindow(state windowState) *webviewWindow {
 	return win
 }
 
-// measureFrameEdges learns the border DWM draws around a window like this app's, by making one
-// and throwing it away: a window that has only been created reports the same frame as one on
-// screen (9/0/9/9 for a WS_OVERLAPPEDWINDOW at 150%), while the documented metrics do not -
-// SM_CXSIZEFRAME plus SM_CXPADDEDBORDER gives 11 where DWM draws 9.
+// measureFrameEdges 用一个建完就扔的窗口，量出 DWM 在像本程序这样的窗口周围画的边框：
+// 一个刚创建、还没上屏的窗口报出的边框和上屏的窗口一样（150% 下 WS_OVERLAPPEDWINDOW 是
+// 9/0/9/9），而文档里那些度量不行——SM_CXSIZEFRAME 加 SM_CXPADDEDBORDER 给出 11，
+// DWM 却只画 9。
 //
-// It is for the first run: later runs have the window rectangle in their state file, and the
-// first has only the menus, which speak in visible terms. False means the caller opens the
-// window as it did before rather than guessing a thickness.
+// 这是给第一次运行用的：之后几次运行在状态文件里已有窗口矩形，只有第一次手里只有菜单，
+// 而菜单说的是可见框那套话。返回 false 表示调用方按老样子打开窗口，而不是猜一个厚度。
 func measureFrameEdges() (frameEdges, bool) {
 	instance, _, _ := procGetModuleHandleW.Call(0)
 	name, err := windows.UTF16PtrFromString(shadowClassName)
@@ -294,9 +286,8 @@ func measureFrameEdges() (frameEdges, bool) {
 	return frameEdgesOf(hwnd)
 }
 
-// frameEdgesOf measures the border DWM draws outside the window's visible frame, on
-// each side. It answers false when either query fails, and the caller then works with
-// no border rather than inventing one from a query that did not work.
+// frameEdgesOf 量出 DWM 画在窗口可见框外面的边框，每一边都量。两个查询只要有一个失败就
+// 返回 false，调用方随后按没有边框来干活，而不是从一次没成的查询里编一个边框出来。
 func frameEdgesOf(hwnd uintptr) (frameEdges, bool) {
 	var vis, wr rect
 	if r, _, _ := procDwmGetWindowAttribute.Call(
@@ -322,10 +313,9 @@ func frameEdgesOf(hwnd uintptr) (frameEdges, bool) {
 	return edges, true
 }
 
-// shellOpen hands an address, or any other file, to the shell, which opens it the way a
-// double click in Explorer would - so it is the browser the user chose, with the profile
-// they normally use. ShellExecuteW answers with a value above 32 on success and one of the
-// shell's error codes below it, so a failure is reported by number.
+// shellOpen 把一个地址、或者任何别的文件交给 shell，由它按在资源管理器里双击那样打开——
+// 所以用的是用户自己选的浏览器、平时用的配置文件。ShellExecuteW 成功时返回大于 32 的
+// 值，失败时返回 shell 的错误码（低于 32），所以失败按其编号报出来。
 func shellOpen(target string) {
 	verb, err := windows.UTF16PtrFromString("open")
 	if err != nil {
@@ -344,7 +334,7 @@ func shellOpen(target string) {
 	}
 }
 
-// SetTitle writes the window's title.
+// SetTitle 写窗口标题。
 //
 // SetWindowTextW 本身是线程安全的——它只往窗口上写一段字，不碰 WebView2 的控制器——所以这里不像
 // Eval 那样必须回到窗口线程：从哪个 goroutine 调都行。标题栏上那行版本号就是这么来的（见
@@ -356,9 +346,8 @@ func (win *webviewWindow) SetTitle(title string) {
 	win.w.SetTitle(title)
 }
 
-// Show brings the window up, restoring it if it was minimised. It is called from a
-// menu callback, which runs on its own goroutine, so it goes through Dispatch:
-// WebView2's controller belongs to the thread running the loop.
+// Show 把窗口叫出来，最小化时先还原。它是从菜单回调里调的，而菜单回调跑在自己的
+// goroutine 上，所以要过一遍 Dispatch：WebView2 的控制器属于跑消息循环的那个线程。
 func (win *webviewWindow) Show() {
 	win.Dispatch((*webviewWindow).show, win)
 }
@@ -370,9 +359,8 @@ func (win *webviewWindow) show() {
 	procSetForegroundWindow.Call(win.hwnd)
 }
 
-// placeVisible gives the window the visible frame width x height, keeping its top left
-// corner where it is: a menu that changes the size is not a request to move the window.
-// It talks to Win32 directly, so it must run on the window's thread.
+// placeVisible 把窗口的可见框设成 width x height，左上角留在原处：菜单改尺寸并不是
+// 要挪窗口。它直接跟 Win32 打交道，所以必须在窗口线程上跑。
 func (win *webviewWindow) placeVisible(size [2]int) {
 	width, height := size[0], size[1]
 	vx, vy := win.visibleCorner(width, height)
@@ -380,17 +368,15 @@ func (win *webviewWindow) placeVisible(size [2]int) {
 	win.moveVisible(vx, vy, width, height, strconv.Itoa(width)+"x"+strconv.Itoa(height)+" visible")
 }
 
-// Center puts the window in the middle of the screen without changing its size. It is the way
-// back from a window that has been dragged half off the screen, and the way back to the middle
-// after a size was picked with the corner deliberately left alone.
+// Center 把窗口放到屏幕正中，不动它的尺寸。它是窗口被拖得半个身子在屏幕外之后回来的路，
+// 也是选完尺寸、故意没动窗口角之后回到正中的路。
 //
-// The screen rather than the work area, so that it agrees with what the system does: a window
-// placed by the shell sits over the taskbar too.
+// 用的是整块屏幕而不是工作区，好跟系统的做法对上：由 shell 摆放的窗口也会盖在任务栏上。
 func (win *webviewWindow) Center() {
 	win.Dispatch((*webviewWindow).center, win)
 }
 
-// center does the work, on the window's thread.
+// center 干活的地方，在窗口线程上。
 func (win *webviewWindow) center() {
 	var wr rect
 	if ret, _, _ := procGetWindowRect.Call(win.hwnd, uintptr(unsafe.Pointer(&wr))); ret == 0 {
@@ -423,26 +409,23 @@ func (win *webviewWindow) center() {
 	win.moveVisible(vx, vy, width, height, "centred")
 }
 
-// TopMost reports whether the window is above every other window.
+// TopMost 报告窗口是否在所有其他窗口之上。
 func (win *webviewWindow) TopMost() bool {
 	style, _, _ := procGetWindowLongPtrW.Call(win.hwnd, gwlExStyle)
 	return style&wsExTopmost != 0
 }
 
-// ToggleTopMost flips the window between on top of everything and the ordinary order, and
-// reports which it is now.
+// ToggleTopMost 让窗口在「压在所有窗口之上」和普通层序之间来回翻，并报告翻完是哪种。
 //
-// The state is read before the move rather than after it: the move goes through Dispatch,
-// which does not wait, so what the window is about to be is the only answer available here
-// - and it is the one the menu's tick wants.
+// 状态是在移动之前读的，不是在移动之后：移动要过 Dispatch，而它不等，所以这里唯一能给的
+// 答案就是窗口即将变成的样子——也正是菜单勾选想要的那个。
 func (win *webviewWindow) ToggleTopMost() bool {
 	on := !win.TopMost()
 	win.Dispatch(win.setTopMost, on)
 	return on
 }
 
-// setTopMost puts the window above every other window, or back among them. It runs on the
-// window's thread.
+// setTopMost 把窗口放到所有其他窗口之上，或者放回它们中间。它在窗口线程上跑。
 func (win *webviewWindow) setTopMost(on bool) {
 	after := hwndNotTopmost
 	if on {
@@ -458,15 +441,13 @@ func (win *webviewWindow) setTopMost(on bool) {
 	slog.Info("topmost changed", "topmost", on)
 }
 
-// moveVisible puts the visible frame's top left corner at vx, vy and makes it width x
-// height. It is the one place the two rectangles have to be converted: a menu speaks of the
-// frame a person sees, and SetWindowPos takes a window rect, so the border measured at
-// creation is added back. Setting the window rect to the visible size instead would put the
-// frame a border's width past where it was asked for.
+// moveVisible 把可见框的左上角放到 vx、vy，并把它设成 width x height。两个矩形必须在
+// 这一个地方换算：菜单说的是人看得见的框，而 SetWindowPos 要的是 window rect，所以要把
+// 创建时量到的边框加回去。反过来把 window rect 设成可见尺寸，会让框比要求的位置多出一个
+// 边框宽。
 //
-// A maximised window keeps its maximised rectangle whatever it is told, so it is restored
-// first: without that, a size or a place picked from the menu would not be seen until the
-// user restored the window by hand.
+// 最大化窗口不管你怎么说都保持它最大化时的矩形，所以先还原它：不这么做，从菜单选的尺寸或
+// 位置要等用户手动还原窗口才看得见。
 func (win *webviewWindow) moveVisible(vx, vy int32, width, height int, want string) {
 	if wp, ok := windowPlacementOf(win.hwnd); ok && wp.showCmd == swShowMaximized {
 		procShowWindow.Call(win.hwnd, swRestore)
@@ -489,8 +470,7 @@ func (win *webviewWindow) moveVisible(vx, vy int32, width, height int, want stri
 	win.logGeometry(want)
 }
 
-// visibleCorner is where the window's visible frame starts now, or the middle of the
-// work area when there is no frame to read.
+// visibleCorner 是窗口可见框现在起于哪里；没有框可读时，就是工作区的正中。
 func (win *webviewWindow) visibleCorner(width, height int) (int32, int32) {
 	var vis rect
 	if r, _, _ := procDwmGetWindowAttribute.Call(win.hwnd, dwmwaExtendedFrameBounds,
@@ -501,17 +481,15 @@ func (win *webviewWindow) visibleCorner(width, height int) (int32, int32) {
 	return wa.left + (wa.width()-int32(width))/2, wa.top + (wa.height()-int32(height))/2
 }
 
-// keepOnScreen pulls a corner back inside the work area: a size picked from the menu should not
-// grow the window over the taskbar.
+// keepOnScreen 把一个角拉回工作区里：从菜单选的尺寸不该让窗口长到任务栏上去。
 func keepOnScreen(vx, vy int32, width, height int) (int32, int32) {
 	return clampTo(workArea(), vx, vy, width, height)
 }
 
-// clampTo pulls a corner back inside area, whichever rectangle that is: the work area for a size
-// picked from the menu, the whole screen for centring (see center). Without it the window would
-// grow or move off the edge, taking the title bar with it, where it cannot be reached to drag
-// back. The far edge is applied first, so a window larger than the area ends up against the top
-// left rather than at coordinates that are neither inside nor on the edge.
+// clampTo 把一个角拉回 area 里，不管那是哪个矩形：菜单选的尺寸用工作区，居中用整块屏幕
+// （见 center）。没有它，窗口会长出或移出边缘，把标题栏也一起带走，到了那儿就够不着、拖不
+// 回来。先夹远边，所以比 area 还大的窗口会贴住左上角，而不是停在一组既不在里面、也不在
+// 边上的坐标上。
 func clampTo(area rect, vx, vy int32, width, height int) (int32, int32) {
 	if area.width() <= 0 {
 		return vx, vy
@@ -531,23 +509,21 @@ func clampTo(area rect, vx, vy int32, width, height int) (int32, int32) {
 	return vx, vy
 }
 
-// screenArea is the whole primary display, taskbar included. Centring uses it rather than the
-// work area because that is what the system centres in; see center.
+// screenArea 是整块主显示器，含任务栏。居中用它而不是工作区，因为系统的居中就是按它算的；
+// 见 center。
 func screenArea() rect {
 	width, height := displaySize()
 	return rect{right: int32(width), bottom: int32(height)}
 }
 
-// logGeometry writes the window's three rectangles and its frame edges.
+// logGeometry 写下窗口的三个矩形和它的边框。
 //
-// It is the self check: window minus visible should be the frame edges, visible minus
-// client should be the title bar and borders. want says what was being asked for, so
-// one line is enough to tell where a window ended up and why. WebView2's controller
-// follows WM_SIZE, so nothing is synced by hand here.
+// 这是自检：window 减 visible 应该等于边框，visible 减 client 应该是标题栏和边框。want
+// 说明当时在要什么，所以一行就够看出窗口落到了哪里、为什么。WebView2 的控制器会跟着
+// WM_SIZE 走，所以这里没有什么是手工同步的。
 //
-// The work area is in the line too: it is what 居中窗口 centres in and what keeps a size
-// picked from the menu on screen, and having it next to the result is what makes "why is it
-// not in the middle" answerable without another run.
+// 工作区也在这一行里：居中窗口按它居中，菜单选的尺寸靠它留在屏幕上，把它放在结果旁边，
+// 「为什么没在正中」才不用再跑一次就能答上来。
 func (win *webviewWindow) logGeometry(want string) {
 	var wr, cr, vis rect
 	procGetWindowRect.Call(win.hwnd, uintptr(unsafe.Pointer(&wr)))
@@ -571,17 +547,16 @@ func (win *webviewWindow) logGeometry(want string) {
 
 func (win *webviewWindow) Run() { win.w.Run() }
 
-// Destroy takes the window down for real, bypassing the WM_CLOSE handled above.
+// Destroy 真正把窗口拆掉，绕过上面接管的 WM_CLOSE。
 func (win *webviewWindow) Destroy() {
 	procDestroyWindow.Call(win.hwnd)
 }
 
-// WindowRect reports the size to remember for the next run.
+// WindowRect 报告要留给下一次运行的尺寸。
 //
-// The rectangle comes from GetWindowPlacement's rcNormalPosition, the one the window
-// returns to when it is restored. That is the rectangle worth keeping even while the
-// window is maximised or minimised - the state a user is most likely to quit from -
-// and showCmd travels with it so that a maximised window reopens maximised.
+// 这个矩形来自 GetWindowPlacement 的 rcNormalPosition，也就是窗口被还原时回到的那个。
+// 哪怕窗口正处在最大化或最小化——用户最可能在这种状态下退出——也值得把它记下来；
+// showCmd 跟着它一起走，这样最大化退出的窗口下次才会最大化打开。
 func (win *webviewWindow) WindowRect() (windowState, bool) {
 	// 全屏时窗口铺满整个显示器，那不是用户选的尺寸：要记的是进全屏之前那个矩形
 	if s, ok := fullScreenWindowRect(); ok {
@@ -599,8 +574,7 @@ func (win *webviewWindow) WindowRect() (windowState, bool) {
 	}, true
 }
 
-// windowPlacementOf asks Windows for the window's restored rectangle and the state
-// it is in now.
+// windowPlacementOf 向 Windows 要窗口还原后的矩形，以及它当前所处的状态。
 func windowPlacementOf(hwnd uintptr) (windowPlacement, bool) {
 	var wp windowPlacement
 	wp.length = uint32(unsafe.Sizeof(wp))
@@ -610,40 +584,36 @@ func windowPlacementOf(hwnd uintptr) (windowPlacement, bool) {
 	return wp, true
 }
 
-// displaySize is the primary display's size in pixels.
+// displaySize 是主显示器的像素尺寸。
 //
-// It follows the process's DPI awareness, so on a scaled display these are physical
-// pixels rather than the logical ones a webview would call vw. Call it after
-// systray.EnableDPIAwareness, and replace it with the actual monitor's size if the
-// window is not going to open on the primary display.
+// 它跟随进程的 DPI 感知，所以在缩放过的显示器上，这些是物理像素，而不是 webview 会叫作
+// vw 的逻辑像素。要在 systray.EnableDPIAwareness 之后调它；如果窗口不打算开在主显示器
+// 上，就把它换成实际那块显示器的尺寸。
 func displaySize() (int, int) {
 	w, _, _ := procGetSystemMetrics.Call(smCXScreen)
 	h, _, _ := procGetSystemMetrics.Call(smCYScreen)
 	return int(w), int(h)
 }
 
-// workArea is the desktop minus the taskbar. Centring on the full screen would put
-// the bottom edge of the window under the taskbar.
+// workArea 是桌面减去任务栏。按整块屏幕居中会把窗口的下边缘塞到任务栏底下。
 func workArea() rect {
 	var r rect
 	procSystemParametersInfoW.Call(spiGetWorkArea, 0, uintptr(unsafe.Pointer(&r)), 0)
 	return r
 }
 
-// setWindowIcons gives the window the icons the taskbar, Alt+Tab and the title bar draw.
+// setWindowIcons 给窗口装上任务栏、Alt+Tab 和标题栏画的那些图标。
 //
-// This is not the icon inside the .exe - that one is a resource, written by internal/genicon. A
-// window's icon is a runtime thing, and the class go-webview2 registers has none: without this,
-// the taskbar, Alt+Tab and the title bar fall back to the default.
+// 这不是 .exe 里面的图标——那个是资源，由 internal/genicon 写进去。窗口的图标是运行时的
+// 东西，而 go-webview2 注册的类一个都没有：没有这个函数，任务栏、Alt+Tab 和标题栏就退回
+// 默认图标。
 //
-// Each one is drawn at the size Windows says it wants rather than at 16 and 32: a scaled
-// display asks for larger icons (SM_CXSMICON is 24 at 150%, SM_CXICON 48) and does not
-// scale up what it is handed, so an icon drawn at 16 and shown at 24 is a stretched one,
-// which is the blur. Drawing the artwork again at the asked-for size costs almost nothing
-// and comes out sharp.
+// 每个图标都按 Windows 说要的尺寸画，而不是一律画 16 和 32：缩放过的显示器要更大的图标
+// （150% 时 SM_CXSMICON 是 24，SM_CXICON 是 48），而且不会把它拿到的东西放大，所以画 16、
+// 显示 24 的图标是拉伸出来的，那就是模糊的来源。按要求的尺寸重画一遍美术资源几乎不花什么
+// 代价，出来却是清晰的。
 //
-// The HICONs are deliberately not destroyed afterwards: they belong to the window and have
-// to outlive this call, and the end of the process is what releases them.
+// 这些 HICON 之后是故意不销毁的：它们属于窗口，必须活过这次调用，由进程结束来释放。
 func (win *webviewWindow) setWindowIcons() error {
 	icons := make([]uintptr, 0, 2)
 	sizes := make([]int, 0, 2)
