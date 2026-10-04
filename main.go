@@ -1,18 +1,18 @@
 //go:build windows
 
-// The launcher puts a tray icon and a WebView2 window together around one game: 卫戍协议：盟// (Stronghold Protocol), a fan-made 1-4 player co-op browser game whose server is a Node.js
-// process. The window is the game - it opens the server's own page, on this machine.
+// 启动器把托盘图标和 WebView2 窗口一起装在一个游戏外面：卫戍协议：盟约
+// (Stronghold Protocol)，一个玩家自制的 1-4 人联机浏览器游戏，它的服务端是一个 Node.js
+// 进程。窗口就是游戏——它打开的是这台机器上服务端自己的页面。
 //
-// The menu is split by what it acts on: the window carries its own (置顶, 居中, 刷新, 恢复参数
-// 尺寸 and the three size settings) in the system menu on the title bar, the tray carries the
-// program's own (显示窗口, 开机自启动, and the 打开 and 更多 submenus, 退.
+// 菜单按「它作用于什么」分成两半。窗口管游戏自己的那几项：置顶、居中、刷新与
+// 恢复参数尺寸，都在标题栏的系统菜单里。托盘管程序自己的那几项：显示窗口、
+// 开机自启动、打开与更多两个子菜单，以及排在最后的退出。
 //
-// The window is up as soon as it is created, and closing it hides it rather than quitting: the
-// tray stays, and 显示窗口 brings it back, until 退出 is picked. Its size is remembered between
-// runs - the position is not, since a run starts centred.
+// 窗口一创建就显示，而关闭它只是把它藏起来，不是退出：托盘还在，显示窗口还能把它叫
+// 回来，直到有人选了退出。窗口尺寸会跨运行记住——位置不会，因为每次运行都从居中开始。
 //
-// Built with -ldflags=-H=windowsgui: the console subsystem would put a console window beside it,
-// whose taskbar button wears the console icon. README.md has the two build steps.
+// 编译时带上 -ldflags=-H=windowsgui：控制台子系统会在它旁边再放一个控制台窗口，
+// 而它任务栏按钮上挂的是控制台的图标。构建的两步在 README.md 里。
 package main
 
 import (
@@ -38,11 +38,10 @@ import (
 // launcherName 是那个 exe 的名字。报错弹窗是这个程序没能起来（窗口还没有呢），托盘里躺着的是这个
 // 程序（它启动完也还在），所以那两处说的是启动器——那三个字在那里不是多余的。
 //
-// appID is what a machine reads, and what the app is filed under: the folder under %LOCALAPPDATA%
-// (which also holds the game's own source), and the name of the startup entry. It is ASCII,
-// lowercase, and must never change: the day it does, every user's saved window size, browser
-// profile and downloaded game are left behind under the old name. Do not
-// derive it from appName.
+// appID 是机器读的东西，也是这个程序归档的依据：%LOCALAPPDATA% 下的那个文件夹
+// （游戏的源码也存在那里），以及自启动项的名字。它是 ASCII、小写，而且**永远**不能变：
+// 它一变的当天，所有用户存下的窗口尺寸、浏览器配置和下载好的游戏都会留在旧名字底下。
+// 不要让它从 appName 推出来——两者可以各自不同，事实上，它们也确实不同。
 const (
 	appName = "卫戍协议：盟约"
 
@@ -55,19 +54,17 @@ const (
 	appID        = "stronghold-protocol-launcher"
 )
 
-// Version is the build's version, and the one thing in this program the linker rewrites: the
-// release workflow builds with
+// Version 是构建的版本，也是这个程序里唯一会被链接器改写的东西：发布流程构建时带上
 //
 //	-ldflags "-H=windowsgui -X main.Version=${{ github.ref_name }}"
 //
-// so a release carries the tag it was published from, and a local build stays at "dev".
+// 所以发布版带着它发布自的那个 tag，本地构建则停在 "dev"。
 //
-// It has to stay a plain string variable: -X only reaches one whose initializer is a constant
-// expression, and does nothing at all - silently - to a variable computed at run time.
+// 它必须保持是一个普通字符串变量：-X 只够得到一个初始化式是常量表达式的变量，而对运行时
+// 算出来的变量什么都不做——而且是悄悄地什么都不做。
 //
-// Nothing in the menu shows it, but a local build does get one extra submenu, so the value earns
-// its place twice. It goes to the log at startup, which is where the question it answers ("which
-// build is this") is asked anyway.
+// 菜单里没有任何一项显示它，但本地构建确实会多出一个子菜单，所以这个值在两个地方都挣得了
+// 它的位置。它会在启动时进日志，而它回答的那个问题（「这是哪一版」）本来就是在那里问的。
 var Version = "dev"
 
 // trayName 是托盘图标的悬停提示：程序名加上这一份的版本。
@@ -83,23 +80,23 @@ func trayName(version string) string {
 	return launcherName + " - " + version
 }
 
-// win is the main window, set once in main and never nil after that: newWindow
-// returns nil when the WebView2 runtime is missing or the window could not be
-// created, and main stops there rather than running a tray with nothing behind it.
+// win 是主窗口，在 main 里设置一次，之后永不为 nil：WebView2 运行时缺失，或者窗口
+// 建不出来时，newWindow 返回 nil，而 main 就停在那里，而不是守着一个身后什么都没有的
+// 托盘继续跑。
 var win *webviewWindow
 
-// report puts a message in front of the person. Before there is a window this is the only way the
-// program can say anything at all: with -H=windowsgui there is no console to print to.
+// report 把一条消息摆到人面前。在有窗口之前，这是这个程序唯一能说话的方式：带上
+// -H=windowsgui 就没有控制台可以打印。
 func report(cause string) {
 	if err := showError(cause); err != nil {
 		slog.Error("show", "error", err)
 	}
 }
 
-// parseArgs reads the switches this program answers to.
+// parseArgs 读这个程序认的开关。
 //
-// -data-dir is here, and read before anything else, because it decides where the first file this
-// program writes goes. -no-game is described where it is used.
+// -data-dir 在这里，而且比别的都先读，因为它决定这个程序写下的第一个文件去往哪儿。
+// -no-game 在它被用到的地方说明。
 func parseArgs() {
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
@@ -127,13 +124,12 @@ func parseArgs() {
 	}
 }
 
-// createWindow builds the window, turning the one failure that is not an error into one.
+// createWindow 建出窗口，并把那个不是错误的失败变成一个错误。
 //
-// When WebView2 cannot create its environment - no runtime installed, or a user data folder it
-// cannot make - its completion handler is called with a nil controller and go-webview2
-// dereferences it. That panic happens on this goroutine on the way back through NewWithOptions, so
-// it is caught here rather than reaching the runtime and taking the process with it: without this
-// the program disappears without a word, and a word is all anyone has to go on.
+// WebView2 建不出环境时——没装运行时，或者给它一个它建不出的用户数据文件夹——它的完成
+// handler 会被以一个 nil controller 调起，而 go-webview2 把它解引用了。那次 panic 发生在
+// 这个 goroutine 上，正在 NewWithOptions 返回的路上，所以它在这里被抓住，而不是一路走到运行
+// 时那里，把进程一起带走：没有这个，程序会一声不响地消失，而一声不响之外，人没有别的可依凭。
 func createWindow(state windowState) (w *webviewWindow) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -157,25 +153,25 @@ func showError(cause string) error {
 	return err
 }
 
-// The address the window is showing. The tray menu's goroutines read it, the page's binding writes
-// it, and both end up on the thread that runs the message loop.
+// 窗口正在显示的地址。托盘菜单的那些 goroutine 读它，页面的绑定写它，而两者最终都落在跑消息循
+// 环的那个线程上。
 var (
 	urlMu      sync.RWMutex
 	currentURL = gameAddress
 )
 
-// url is the address the window is showing, or is about to.
+// url 是窗口正在显示的地址，或者即将显示的。
 func url() string {
 	urlMu.RLock()
 	defer urlMu.RUnlock()
 	return currentURL
 }
 
-// address turns what was typed into an address the window can open.
+// address 把输入的东西变成一个窗口打得开的地址。
 //
-// What gets typed is usually a host, maybe with a port, and nothing in front of it - and WebView2
-// reads that as a search or a file path rather than as a site. Anything already carrying a scheme is
-// left alone; everything else gets http:// in front.
+// 输入进去的通常是一个主机名，可能带端口，前面什么都没有——而 WebView2 会把它读成一次搜
+// 索或者一个文件路径，而不是一个站点。已经带着 scheme 的原样留着；其余的
+// 一律在前面加上 http://。
 func address(typed string) string {
 	target := strings.TrimSpace(typed)
 	if target == "" {
@@ -193,11 +189,11 @@ func address(typed string) string {
 	return "http://" + target
 }
 
-// roomCode is the room key in what was typed, or "" when it is not one.
+// roomCode 是输入内容里的房间密钥，不是密钥时返回 ""。
 //
-// Four letters or digits on their own are taken for a key rather than a host: "ABCD" is not a
-// machine anybody has, and it is exactly what a friend reads out loud. The game's own lobby makes the
-// same call about what gets pasted into it (public/js/screens/lobby.js).
+// 光秃秃的四个字母或数字会被当成密钥，而不是主机名："ABCD" 不是谁真有的机器，而它恰恰就是
+// 有人会念出来的那串东西。游戏自己的大厅对被粘进里面的东西也作同样的判断
+// （public/js/screens/lobby.js）。
 func roomCode(typed string) string {
 	key := strings.ToUpper(strings.TrimSpace(typed))
 	if len(key) != roomCodeLen {
@@ -211,10 +207,9 @@ func roomCode(typed string) string {
 	return key
 }
 
-// joinURL turns what was typed into an address the window can open. Three shapes, because all three
-// are things people actually paste: a whole invite link - which may point at someone else's machine,
-// so it is used as it stands - a bare host or host:port, and the four-character key on its own, which
-// is completed against this machine's own game.
+// joinURL 把输入的东西变成一个窗口打得开的地址。三种形状，因为三种都是人真会粘进来的东西：
+// 一整个邀请链接——它可能指向别人的机器，那就照原样用——一个光秃秃的主机名或主机名:端口，以及
+// 单独一个四字符密钥，它会补全到这台机器自己的游戏上。
 func joinURL(typed string) string {
 	if key := roomCode(typed); key != "" {
 		return gameAddress + "?room=" + key
@@ -222,8 +217,8 @@ func joinURL(typed string) string {
 	return address(typed)
 }
 
-// showGame points the window at the game: the address this run is on, which is the saved one when
-// there is one - a room joined by link, or a friend's server - and this machine's own otherwise.
+// showGame 把窗口指向游戏：这一次运行所在的地址，有存下的就用存下的——用链接加入的房间，
+// 或者朋友的服务器——否则就用这台机器自己的。
 func showGame() {
 	if win == nil {
 		return
@@ -232,7 +227,7 @@ func showGame() {
 	win.Dispatch(win.Navigate, url())
 }
 
-// showNotice puts a page this app built into the window, and remembers nothing.
+// showNotice 把一个本程序自己搭的页面放进窗口，别的什么都不记。
 func showNotice(page string) {
 	if win == nil || page == "" {
 		return
@@ -257,7 +252,7 @@ var (
 	upstreamKnown atomic.Bool
 )
 
-// applyTitle writes the window title from those two hashes。
+// applyTitle 用那两个 hash 写出窗口标题。
 //
 //	卫戍协议：盟约 - bdb0765
 //	卫戍协议：盟约 - bdb0765 - 检测到新版本 8f3a1c2
@@ -296,12 +291,12 @@ func windowTitle(local, remote string, known bool) string {
 	}
 	title := appName + " - " + shortHash(local)
 	if known && remote != "" && !sameRevision(local, remote) {
-		title += " - 检测到新版本 " + shortHash(remote)
+		title += " - 检测到新版本 " + shortHash(remote) + " （可在托盘菜单中更新）"
 	}
 	return title
 }
 
-// startupCheck asks once which commit master is on, and completes the title with the answer.
+// startupCheck 问一次 master 在哪个 commit 上，再用答案把标题补齐。
 //
 // 它在自己的 goroutine 里跑（由 main 起）：那是一次网络请求，而窗口已经该出来了。查不到就什么都
 // 不说——一次失败的请求不是一个 commit，不该让标题栏宣称检测到新版本。
@@ -323,9 +318,8 @@ func startupCheck() {
 	applyTitle()
 }
 
-// openStartup points the window at the address this run opens: the one the last run was left on
-// (the game's own, a room joined by link, or a friend's server), or this machine's own game when
-// nothing was saved.
+// openStartup 把窗口指向这一次运行打开的地址：上一次运行留在的那个（游戏自己的地址、用链接
+// 加入的房间，或者朋友的服务器），什么都没存时就指向这台机器自己的游戏。
 func openStartup(saved string) {
 	if target := address(saved); target != "" {
 		urlMu.Lock()
@@ -336,8 +330,8 @@ func openStartup(saved string) {
 	win.Navigate(url())
 }
 
-// setURL points the window at a new address and remembers it. This is what the join prompt comes back
-// through, so it arrives on the thread that runs the message loop - which is where Navigate belongs.
+// setURL 把窗口指向一个新地址并记下它。加入提示就是从这里回来的，所以它是落在跑消息循环的那个
+// 线程上——而那正是 Navigate 该待的地方。
 func setURL(raw string) {
 	target := joinURL(raw)
 	if target == "" || target == url() {
@@ -351,15 +345,14 @@ func setURL(raw string) {
 	remember()
 }
 
-// reprepare takes the game down and brings it back up through the game's own preparation step.
+// reprepare 把游戏停掉，再让它走游戏自己的准备步骤重新起来。
 //
-// update is the whole difference between the two menu items: 更新游戏 fetches the newest source
-// first (updateGame), 重新准备游戏文件 works with the tree that is there. Everything around the
-// preparation is shared on purpose - stopping the server, the page that says what is going on,
-// putting the game back or saying why not - because those must not drift apart between them.
+// update 是两个菜单项之间的全部区别：更新游戏先取回最新的源码（updateGame），重新准备游戏文
+// 件则直接用现有的这棵树。准备周围的一切是特意共用的——停服务、说明进展的那个页面、把游戏摆回
+// 去或者说明为什么不行——因为它们之间绝不能各走各的。
 //
-// It runs on a goroutine of its own: the preparation lasts as long as a 250 MB download lasts, and
-// the goroutine that ranges over a menu item's channel is not the one to sit through that.
+// 它跑在自己的 goroutine 上：准备要持续一次 250 MB 下载那么久，而那个遍历某个菜单项 channel
+// 的 goroutine 不是该坐等这件事的那一个。
 func reprepare(update bool) {
 	go func() {
 		stopGame()
@@ -380,8 +373,122 @@ func reprepare(update bool) {
 	}()
 }
 
-// remember writes down the size the window is at. A window whose rectangle cannot be read leaves
-// the file alone, rather than writing a size of zero over a good one.
+// openLocalPage 就是菜单项「提取本地客户端素材」做的事，而且它只做这一件事：把游戏
+// 停掉，把那一页摆上去。
+//
+// 它**不**提取、也不弹选择框。人要按的是页面上那个按钮——取哪个目录是人的事，而这个入口只是把
+// 那件事摆到他面前。先前这里进来就跑，用的是上次那个目录：目录已知时那一页只闪一下，人根本没有
+// 机会改。三个动作因此分开：点菜单 → 给页面；点按钮 → 问目录；选定了（不是取消）→ 提取。
+func openLocalPage() {
+	go func() {
+		stopGame()
+		showNotice(localPage())
+	}()
+}
+
+// extractLocalAssets 干的是活，干不成时回答该显示哪一页。空答案表示它走通了，游戏
+// 可以摆回来了。
+//
+// 空串这个约定与更新那一套是同一个（见 reprepare）：成了就什么都不用说，把游戏摆回来就是最好的
+// 交代；失败了才需要一页解释。
+//
+// 取材目录按这个顺序定：上次选的 → 常见位置里找得到的。两者都没有时不猜、也不弹框——交回就绪页，
+// 那里有一个「选择客户端目录」的按钮，由人点（见 pickClientFolder）。
+//
+// 定下来之后用 --game <dir> 交给 setup.mjs，它就不必自己猜了。选过一次就记下来：装在别的盘的人
+// 不必每次都回答同一个问题。
+//
+// 还没接上的一处：判断成没成。脚本对"没找到客户端"这类非致命项也返回 0，所以退出码不能当答案——
+// 要看的是 data\local-assets.json 在不在。那一条留到下面那处调用旁边一起改。
+func extractLocalAssets() string {
+	client := savedClientFolder()
+	if client == "" {
+		client = defaultClientFolder()
+	}
+	// 不知道该去哪儿取：把决定交回给人。就绪页上那个按钮是唯一弹框的地方。
+	if client == "" {
+		slog.Info("local assets: the client folder is not known; waiting for one to be picked")
+		return localPage()
+	}
+	slog.Info("local assets: extracting", "client", client)
+
+	node, err := findNode()
+	if err != nil {
+		slog.Error("node", "error", err)
+		return nodeMissingPage()
+	}
+	// 提取要写 public\assets\local 与 data\local-assets.json，所以和准备步骤共用那把锁。
+	release, err := lockFile(prepareLockPath())
+	if err != nil {
+		slog.Error("local assets: cannot take the preparation lock", "error", err)
+		return setupFailedPage()
+	}
+	defer release()
+
+	// 跑的是游戏自己的脚本：客户端检测、Python 检测、提取，全在里面，输出一路进那块区域。
+	//
+	// --local 是"不问，直接提取"，正好抵掉 runSetup 里那个 --no-local——那个开关存在的原因就是
+	// 这一步会提问，而这个程序没有终端。现在那个提问换成了上面那个选择框。
+	if err := runSetupStep(node, "本地客户端素材提取完成", localWait,
+		"--quiet", "--local", "--game", client); err != nil {
+		slog.Error("local assets: extraction failed", "error", err)
+		return setupFailedPage()
+	}
+
+	// 提取完了就回主界面，和「更新游戏」跑完之后一样：这一步的结果是"游戏里多了几张贴图"，不是
+	// 一句要读的通知——素材已经在磁盘上，看不看得出来去游戏里看。输出框里那几十行仍留在日志文件里，
+	// 页面上就没有必要再停一下。
+	return ""
+}
+
+// pickAndExtract 就是页面上的「选择客户端目录」按钮跑的东西：问目录 → 记住了 → 提取。
+//
+// 取消就停在原地：那一页还在，按钮还在，人可以再点一次。除此之外没有别的答案，所以这里没有
+// "取消之后该怎么办"这一问。
+func pickAndExtract() {
+	folder, ok := pickClientFolder()
+	if !ok {
+		slog.Info("local assets: the folder picker was cancelled")
+		return
+	}
+	rememberClientFolder(folder)
+
+	// 拿到了路径才动手，而动手这件事只有这一条路会走到。
+	//
+	// 先换成"正忙"的那一页：按钮从这一刻起就不该还在，否则再点一下就排进第二次提取。
+	showNotice(localBusyPage())
+	if page := extractLocalAssets(); page != "" {
+		showNotice(page)
+	} else {
+		prepareAndShow()
+	}
+}
+
+// rememberClientFolder 记下选中的目录，并顺手说一句它看起来像不像。
+//
+// 不像也照记：那是用户的原始输入，而真正认不认它的是 extract.py——由我们替它否决，用户只会看到
+// "选了却没反应"。记下来它至少会出现在下一次的 --game 里，日志里也看得到。
+func rememberClientFolder(folder string) {
+	if err := saveClientFolder(folder); err != nil {
+		slog.Warn("local assets: cannot remember the chosen folder", "path", folder, "error", err)
+	}
+	if !clientFolderLooksRight(folder) {
+		slog.Warn("local assets: the chosen folder does not look like an AssetBundle root",
+			"path", folder, "expected", `…\Arknights_Data\StreamingAssets\AB\Windows`)
+	}
+}
+
+// prepareAndShow 在某件事把游戏停掉之后把它摆回来，摆不回来时说明为什么。
+func prepareAndShow() {
+	if page := prepareGame(true); page != "" {
+		showNotice(page)
+	} else {
+		showGame()
+	}
+}
+
+// remember 把窗口此刻的尺寸写下来。矩形读不出来的窗口会放着那个文件不动，而不是把一个全零
+// 的尺寸写在一份好的上面。
 func remember() {
 	s := windowState{URL: url(), Size: currentSize().onDisk(), OnTop: win.TopMost()}
 	rect, ok := win.WindowRect()
@@ -476,17 +583,20 @@ func main() {
 		slog.Warn("window icons", "error", err)
 	}
 
-	// 窗口自己的四项（置顶/居中/刷新/恢复参数尺寸）接在系统菜单上：右键标题栏
-	// Alt+空格，见 sysmenu.go	// 上次是不是置顶，装回去：先落到窗口上，再装菜单——菜单上那个勾是从窗口读的
+	// 窗口自己的四项（置顶 / 居中 / 刷新 / 恢复参数尺寸）接在系统菜单上：右键标题栏或者
+	// Alt+空格，见 sysmenu.go。
+	//
+	// 上次是不是置顶，装回去：先落到窗口上，再装菜单——菜单上那个勾是从窗口读的，不是从 state 读的。
 	if state.OnTop {
 		win.setTopMost(true)
 	}
 	installSystemMenu(win)
 
-	// 页面里那套声音是页面自己建的：public/js/audio.js 拿着它的 AudioContext，Go 这边够不着
-	// 所以往每个文档里装一段脚本，由它收放（见 setMuted）。必须赶在 Run 之前——Init 注册的是
-	// "之后创建的每一个文
-	// Init 只收一段脚本，两段拼起来：各自都是独立的作用域，拼在一起不会互相看见
+	// 页面里那套声音是页面自己建的：public/js/audio.js 拿着它的 AudioContext，Go 这边够不着，
+	// 所以往每个文档里装一段脚本，由它收放（见 setMuted）。全屏那一项也是这样。
+	//
+	// 必须赶在 Run 之前：Init 注册的是「之后创建的每一个文档」，已经打开的这个不算。它只收一段
+	// 脚本，所以两段拼起来——各自都是独立的作用域，拼在一起不会互相看见。
 	win.w.Init(muteJS + "\n" + fullscreenJS)
 
 	// 页面把地址交回来靠这个绑定：Eval 不回传值，所以 askForRoom 的答案要从这里回来。绑定必须赶
@@ -505,6 +615,15 @@ func main() {
 	// 页面里的全屏按钮走标准 Fullscreen API，而那只让页面填满控件：要让窗口自己变
 	if err := win.Bind("_fullscreen", func(on bool) { win.fullScreen(on) }); err != nil {
 		slog.Warn("binding _fullscreen", "error", err)
+	}
+
+	// 就绪页上那个「选择客户端目录」按钮调的是这个。框要由 Go 弹：浏览器不给页面自己弹文件框的
+	// 权利（要用户激活），而 <input webkitdirectory> 也只给相对路径——绝对路径是它故意不给的，
+	// 而提取要的正是绝对路径。
+	//
+	// 绑定跑在窗口线程上，而下面那个函数会停住一整个弹窗的生命周期，所以它在自己的 goroutine 里走。
+	if err := win.Bind("_pickFolder", func() { go pickAndExtract() }); err != nil {
+		slog.Warn("binding _pickFolder", "error", err)
 	}
 
 	// 先认下上一次的地址：可能是朋友发来的加入链接，那就直接开到那一局；没有就用本机自己的
@@ -543,8 +662,8 @@ func main() {
 		addMenuItems()
 	}
 
-	// WebView2 自己跑消息循环，而托盘的隐藏窗口挂在同一个线程上，它的消息就
-	// 那个循环分发出去 ——这正是 Register 存在的理由。用 Run 会和 WebView2 抢循环
+	// WebView2 自己跑消息循环，而托盘的隐藏窗口挂在同一个线程上：它的消息得由那一个循环分发
+	// 出去——这正是 systray.Register 存在的理由。用 systray.Run 会和 WebView2 抢那个循环。
 	systray.Register(onReady, nil)
 	win.Run()
 	slog.Info("the message loop ended")
@@ -562,8 +681,8 @@ func main() {
 	win.Destroy()
 }
 
-// addMenuItems builds the menu. systray appends in call order, so these calls run
-// top to bottom exactly as the menu is drawn:
+// addMenuItems 构建菜单。systray 按调用的先后次序追加，所以下面这些调用从上到下跑，
+// 和菜单画出来的样子分毫不差：
 //
 //	显示窗口
 //	开机自启动
@@ -680,6 +799,18 @@ func addMenuItems() {
 	go func() {
 		for range mPrepare.ClickedCh {
 			reprepare(false)
+		}
+	}()
+
+	// 「提取本地客户端素材」是另一个来源的素材：公开镜像里没有的那部分，要从本机装的《明日方舟》
+	// 客户端里取出来。上游的 setup.mjs 本来就会问一次要不要提取，而这个程序没有终端能回答那个问题，
+	// 所以一直是用 --no-local 关掉的——这一项就是那个问题的答案：改由菜单来问。
+	//
+	// 点下去先给一张加载页，页面上那块输出区域会把过程显示出来（与「更新游戏」同一套）。
+	mLocal := mMore.AddSubMenuItem("提取本地客户端素材", "从本机安装的《明日方舟》客户端里提取官方棋盘与界面素材")
+	go func() {
+		for range mLocal.ClickedCh {
+			openLocalPage()
 		}
 	}()
 

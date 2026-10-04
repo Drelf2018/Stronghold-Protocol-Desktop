@@ -32,6 +32,27 @@
       white-space: pre-wrap;
     }
 
+    button {
+      display: inline-block;
+      margin-top: .4em;
+      padding: .5em 1.2em;
+      border: 1px solid #d0d0d4;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #333338;
+      font: inherit;
+      font-size: .95em;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #f4f4f5;
+    }
+
+    button:active {
+      background: #eaeaec;
+    }
+
     code {
       display: block;
       margin-bottom: 1em;
@@ -55,7 +76,7 @@
       bottom: 16px;
       transform: translateX(-50%);
       width: min(760px, calc(100vw - 32px));
-      height: 34vh;
+      height: 30vh;
       min-height: 120px;
       max-height: 72vh;
       flex-direction: column;
@@ -115,6 +136,56 @@
     .log-row {
       color: #3f3f45;
     }
+
+    /* 每一行的等级前缀。等级跟着数据来（entry.Level），画笔取一个类名——颜色是 CSS 的事，
+       文字里写不出颜色，这也是那段文本能一直用 createTextNode 放进去的原因。 */
+    .log-level {
+      margin-right: .5em;
+      font-weight: 600;
+    }
+
+    /* 每行左边一条同色的竖线，这样往上翻的时候不必一行行读前缀也知道哪几行是坏消息。 */
+    .log-info {
+      border-left: 2px solid #4c9a5e;
+      padding-left: .5em;
+    }
+
+    .log-warn {
+      border-left: 2px solid #c8892a;
+      padding-left: .5em;
+    }
+
+    .log-error {
+      border-left: 2px solid #c0392b;
+      padding-left: .5em;
+      background: #fdf1f0;
+    }
+
+    .log-debug {
+      border-left: 2px solid #b9b9c0;
+      padding-left: .5em;
+      color: #85858d;
+    }
+
+    .log-info > .log-level {
+      color: #2f7a45;
+    }
+
+    .log-warn > .log-level {
+      color: #a86c17;
+    }
+
+    .log-error > .log-level {
+      color: #b03426;
+    }
+
+    .log-debug > .log-level {
+      color: #9a9aa2;
+    }
+
+    #pick-client {
+      margin-bottom: 1em;
+    }
   </style>
 </head>
 
@@ -123,6 +194,9 @@
     <h3>{{ .Title }}</h3>
     <pre>{{ .Body }}</pre>
     {{ range .Path }}<code>{{ . }}</code>{{ end }}
+    <!-- 只有本地素材那一页有这个按钮。disabled 是它的原生属性：提取一旦开始就按不动——
+         那时候再按只会排进第二次提取，而人多半只是以为没反应。 -->
+    {{ if (eq .Name "local") }}<button type="button" id="pick-client" {{ if .Disabled }}disabled{{ end }}>点击选择游戏客户端素材目录</button>{{ end }}
   </main>
 
   <section id="log-panel" {{ if .Log }}log{{ end }}>
@@ -141,9 +215,11 @@
        动作的，写在注释里它也照认，于是会当场报 "missing value for command"。这条弯路刚走过：
        第一版这段注释就是这么失败的。
 
-       它只管画：Go 推来的是一个字符串数组，一行一个。它不看上面那个 log 属性（显示是 CSS 的
-       事），也不回话。行是用 createTextNode 放进去的，从不碰 innerHTML：日志里什么都会出现
-       （素材的文件名、服务的报错、别人写的字符串），拼 HTML 就是把它们当标记解释。 -->
+       它只管画：Go 推来的是一个数组，每项 { l: 等级, t: 正文 }。等级画成着色的方括号前缀，
+       正文跟在后面——两段都用 createTextNode 放进去，从不碰 innerHTML：日志里什么都会出现
+       （素材的文件名、服务的报错、别人写的字符串），拼 HTML 就是把它们当标记解释。
+
+       它不看上面那个 log 属性（显示是 CSS 的事），也不回话。 -->
   <script>
     (function () {
       var box = document.getElementById('log-box');
@@ -153,16 +229,58 @@
       // 页面里封顶 200 行，与 Go 那边一次推的上限一致：再多也没有人会往上翻着看。
       var MAX_ROWS = 200;
 
+      // 选择客户端目录：把"用户点了一下"这件事交给 Go，框由它去弹。
+      //
+      // 浏览器不给页面自己弹文件框的权利（要用户激活才行），而就算弹出来了，<input webkitdirectory>
+      // 交回来的也只有相对路径——绝对路径是它故意不给的，而提取要的正是绝对路径。所以这里只负责
+      // 把这一下点击传出去，框与路径都归 Go 那一侧。
+      var pick = document.getElementById('pick-client');
+      if (pick) {
+        pick.addEventListener('click', function () {
+          if (window._pickFolder) window._pickFolder();
+        });
+      }
+
+      // 等级 → 类名。认不出来的一律按 info：那是绝大多数行，也是无害的那一类。
+      //
+      // 大小写在这里归一下，因为两边各自变过：Go 那边用 slog 自己的写法（这里是'INFO'那一类），
+      // 而类名是小写的。
+      function levelClass(level) {
+        var name = String(level || '').toLowerCase();
+        if (name === 'error') return 'log-error';
+        if (name === 'warn' || name === 'warning') return 'log-warn';
+        if (name === 'debug') return 'log-debug';
+        return 'log-info';
+      }
+
+      // 画一行：先放一个着色的等级前缀，再放正文。
+      //
+      // 两段都是用 createTextNode 放进去的，从不碰 innerHTML——日志里什么都会出现（素材的文件名、
+      // 服务的报错、别人写的字符串），拼 HTML 就是把它们当标记解释。前缀里的方括号也只是文字。
+      function addRow(fragment, level, text) {
+        var row = document.createElement('div');
+        row.className = 'log-row ' + levelClass(level);
+
+        var tag = document.createElement('span');
+        tag.className = 'log-level';
+        tag.appendChild(document.createTextNode('[' + (level || 'INFO') + ']'));
+        row.appendChild(tag);
+
+        row.appendChild(document.createTextNode(text));
+        fragment.appendChild(row);
+      }
+
       window.__spLog = function (lines) {
         // 用户停在底部时跟随，往上翻着看时不抢滚动条。
         var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 32;
 
         var fragment = document.createDocumentFragment();
         lines.forEach(function (line) {
-          var row = document.createElement('div');
-          row.className = 'log-row';
-          row.appendChild(document.createTextNode(line));
-          fragment.appendChild(row);
+          // 一行一条：Go 推来的是记录，而记录可能带换行（子进程的输出就是按块读的）。
+          // 拆开画，每一行都有自己的前缀与颜色，左边那条竖线才不会断。
+          String(line.t).split('\n').forEach(function (text) {
+            addRow(fragment, line.l, text);
+          });
         });
         box.appendChild(fragment);
 

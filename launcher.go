@@ -2,14 +2,12 @@
 
 package main
 
-// The game behind the window: where its source comes from, how it is prepared, and the server
-// process this program owns.
+// 窗口背后的游戏：它的源码从哪里来，怎么准备，以及本程序所占有的那个服务器进程。
 //
-// dsh's desktop app could lean on npm for the whole of it - npx fetched the package and ran it.
-// This game is not published (package.json says private, and there is no bin to run), so the
-// source comes from GitHub instead: the archive endpoint serves a tarball, which needs neither
-// git nor npm to fetch. Everything after that is the game's own preparation script,
-// tools/setup.mjs - the same one scripts/start-windows.bat runs before it starts the server.
+// dsh 的桌面应用整件事都能靠 npm——npx 取包并运行它。这个游戏没有发布
+// （package.json 写着 private，也没有可执行的 bin），所以源码改从 GitHub 取：
+// 归档端点提供 tarball，取它既不需要 git 也不需要 npm。之后的一切都是游戏自己的
+// 准备脚本 tools/setup.mjs——scripts/start-windows.bat 启动服务器前跑的就是它。
 
 import (
 	"archive/tar"
@@ -35,63 +33,67 @@ import (
 )
 
 const (
-	// Where the game's server listens and what the window opens. Fixed, because the game's
-	// multiplayer is one backend everybody points at: two players are two connections to the *same*
-	// port, not two servers. 0.0.0.0 for the bind address is the game's own default and the one that
-	// lets the other 1-3 players reach it - 建房 hands out a 4-character key to share.
+	// 游戏的服务器在哪里监听，窗口打开哪个地址。写死是因为游戏的联机只有一个
+	// 所有人都指向的后端：两名玩家是对**同一个**端口的两条连接，而不是两个服务器。
+	// 绑定地址用 0.0.0.0 是游戏自己的默认值，也是让另外 1-3 名玩家能连上它的
+	// 那个值——建房 会发一个 4 字符的密钥用来分享。
 	gamePort    = "3000"
 	gameAddress = "http://127.0.0.1:3000/"
 	gameHealth  = "http://127.0.0.1:3000/healthz"
 	gameDial    = "127.0.0.1:3000"
 	gameBind    = "0.0.0.0"
 
-	// roomCodeLen is how long the game's room keys are (shared/constants.js). A key typed on its own
-	// is turned into an invite link instead of being taken for a host name; the game's own lobby does
-	// the same with what is pasted into it (public/js/screens/lobby.js).
+	// roomCodeLen 是游戏房间密钥的长度（shared/constants.js）。单独输入一个密钥时，
+	// 它会被转成邀请链接，而不是被当成主机名；游戏自己的大厅对粘贴进去的内容
+	// 也是这么处理的（public/js/screens/lobby.js）。
 	roomCodeLen = 4
 
-	// sourceURL is the archive of the repository's default branch. It is the same file GitHub's
-	// "Download ZIP" gives, and it is fetched directly rather than through git: a launcher that
-	// needs git installed is a launcher that fails on a machine that only has Node.js.
+	// sourceURL 是仓库默认分支的归档。它就是 GitHub「Download ZIP」给的那个文件，
+	// 而且是直接取下来的，不走 git：一个要求装好 git 的启动器，是一台只有 Node.js 的
+	// 机器上会失败的启动器。
 	sourceURL = "https://codeload.github.com/sganggs/Stronghold-Protocol/tar.gz/refs/heads/master"
 
-	// minNodeMajor is what the game itself requires (package.json: engines.node >= 22).
+	// minNodeMajor 是游戏自己要求的版本（package.json：engines.node >= 22）。
 	minNodeMajor = 22
 
-	// How long the server is given to answer /healthz once it has been started, and how often it
-	// is asked. A cold start reads the game data, which takes a moment.
+	// 服务器启动之后，给它多久来回应 /healthz，以及多久问它一次。冷启动要读取游戏数据，
+	// 需要一点时间。
 	gameWait = 60 * time.Second
 	gamePoll = 500 * time.Millisecond
 
-	// probeWait is how long /healthz is given to answer when the program asks whether a game is already
-	// up, before deciding to start one of its own.
+	// probeWait 是本程序在决定自己起一个之前，问「是不是已经有游戏在跑」时，给 /healthz
+	// 多久来回应。
 	probeWait = 2 * time.Second
 
-	// setupWait caps the preparation step. The first run downloads about 250 MB of art, so this
-	// is a ceiling for a stuck download, not a budget anybody expects to spend.
+	// setupWait 给准备这一步设上限。首次运行要下载约 250 MB 美术素材，所以这是给一次
+	// 卡住的下载设的天花板，不是谁打算花掉的预算。
 	setupWait = 30 * time.Minute
 
-	// creationNoWindow is CreateProcess's CREATE_NO_WINDOW. This program has no console of its
-	// own, so a console program started without this flag is given a brand new console window -
-	// the black box that flashes past. Every child process goes through hiddenCommand.
+	// localWait 给可选的「从本机已安装的明日方舟客户端提取」设上限。在装了它的机器上
+	// 要花 1-5 分钟，它装的 Python 依赖约 40 MB——所以这又是一个天花板，不是预算。
+	localWait = 15 * time.Minute
+
+	// creationNoWindow 是 CreateProcess 的 CREATE_NO_WINDOW。本程序自己没有控制台，
+	// 所以不加这个标志启动的控制台程序会被分到一个全新的控制台窗口——一闪而过的黑框。
+	// 每个子进程都走 hiddenCommand。
 	creationNoWindow = 0x08000000
 )
 
-// noGame is set by -no-game or --no-game: nothing is started, and the window is opened against
-// whatever is already listening on the game's port.
+// noGame 由 -no-game 或 --no-game 设置：什么都不启动，窗口直接对着游戏端口上
+// 已经在监听的那个开。
 var noGame bool
 
-// hiddenCommand is a child process that is never given a console window of its own.
+// hiddenCommand 是一个永远不会被分到自己的控制台窗口的子进程。
 func hiddenCommand(name string, args ...string) *exec.Cmd {
 	cmd := exec.Command(name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: creationNoWindow}
 	return cmd
 }
 
-// gameCommand runs something inside the game directory.
+// gameCommand 在游戏目录里运行某个东西。
 //
-// NO_COLOR: setup.mjs paints its output green and yellow, and the paint would land in the log as
-// escape sequences. The variable is the switch that script reads.
+// NO_COLOR：setup.mjs 会把它的输出涂成绿色和黄色，而这些颜色落进日志里就成了转义序列。
+// 这个变量就是那个脚本读取的开关。
 func gameCommand(name string, args ...string) *exec.Cmd {
 	cmd := hiddenCommand(name, args...)
 	cmd.Dir = gameDir()
@@ -99,8 +101,8 @@ func gameCommand(name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// gameWriter passes a child's output to the log. The log is the only place it can go: this
-// program has no console to write it to.
+// gameWriter 把子进程的输出送进日志。日志是它唯一能去的地方：本程序没有控制台
+// 可以写。
 type gameWriter struct{ what string }
 
 func (w gameWriter) Write(p []byte) (int, error) {
@@ -110,8 +112,8 @@ func (w gameWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// probeGame asks the one question worth asking about the game: is its server answering. /healthz is
-// the endpoint the project's own Docker healthcheck uses.
+// probeGame 问的是关于这个游戏唯一值得问的问题：它的服务器在回应吗。/healthz 是
+// 项目自己的 Docker healthcheck 用的那个端点。
 func probeGame(timeout time.Duration) bool {
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Get(gameHealth)
@@ -123,14 +125,13 @@ func probeGame(timeout time.Duration) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// busy reports whether anything answers on a TCP address.
+// busy 报告某个 TCP 地址上有没有东西在应答。
 //
-// It connects rather than binds. A listen of our own - even for a moment, even on loopback - is a
-// new program asking Windows' firewall for an entry, and this program already has one for the
-// server it starts.
+// 它去连接，而不是去监听。自己监听一次——哪怕只是一瞬，哪怕只在环回上——都是一个
+// 新程序在向 Windows 防火墙要一条放行规则，而本程序已经为它启动的服务器要过一条了。
 //
-// It is also how the port is checked after the server has failed to come up: something else holding
-// 3000 is a clearer answer than "the game did not start".
+// 服务器没能起来之后，端口也是这样检查的：3000 被别的东西占着，比「游戏没启动」
+// 是更清楚的答案。
 func busy(addr string) bool {
 	conn, err := net.DialTimeout("tcp", addr, time.Second)
 	if err != nil {
@@ -140,19 +141,19 @@ func busy(addr string) bool {
 	return true
 }
 
-// findNode locates the Node.js the game runs on, and refuses one that is too old.
+// findNode 找到游戏运行的 Node.js，并拒绝太旧的版本。
 //
-// The absolute path is kept and used for every child rather than the bare name: this program is
-// started by Explorer, and the PATH it sees is the one that was there at logon.
+// 保留绝对路径并把它用在每个子进程上，而不是用光秃秃的名字：本程序是被资源管理器
+// 启动的，它看到的 PATH 是登录时的那一份。
 func findNode() (string, error) {
 	exe, err := exec.LookPath("node")
 	if err != nil {
 		return "", err
 	}
-	// hiddenCommand, not exec.Command: node is a console program and this program has no console
-	// of its own, so a plain exec.Command here makes Windows allocate a brand new console window
-	// for it - one black window flashing past on every start, for a version string. Every child
-	// this program starts goes through hiddenCommand for the same reason.
+	// 用 hiddenCommand，不是 exec.Command：node 是控制台程序，而本程序自己没有控制台，
+	// 所以这里用裸的 exec.Command 会让 Windows 为它分一个全新的控制台窗口——每次启动
+	// 都闪过一个黑窗，只为了一句版本号。本程序启动的每个子进程都出于同样的理由
+	// 经过 hiddenCommand。
 	out, err := hiddenCommand(exe, "--version").Output()
 	if err != nil {
 		return "", fmt.Errorf("%s --version: %w", exe, err)
@@ -169,7 +170,7 @@ func findNode() (string, error) {
 	return exe, nil
 }
 
-// parseNodeMajor reads the major version out of what "node --version" prints ("v24.16.0").
+// parseNodeMajor 从「node --version」打印的东西里读出主版本号（「v24.16.0」）。
 func parseNodeMajor(version string) (int, error) {
 	fields := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(version), "v"), ".", 2)
 	major, err := strconv.Atoi(fields[0])
@@ -179,8 +180,8 @@ func parseNodeMajor(version string) (int, error) {
 	return major, nil
 }
 
-// sourceReady reports whether the game's source is unpacked and looks whole. The lock file is
-// part of the check because tools/setup.mjs runs npm ci, which needs it.
+// sourceReady 报告游戏的源码是否已解包、看起来是否完整。锁文件也在检查之列，因为
+// tools/setup.mjs 会跑 npm ci，而它需要这个文件。
 func sourceReady() bool {
 	for _, name := range []string{
 		"package.json",
@@ -195,14 +196,13 @@ func sourceReady() bool {
 	return true
 }
 
-// setupNeeded is the cheap version of what tools/setup.mjs --check decides: are the things a run
-// needs already there?
+// setupNeeded 是 tools/setup.mjs --check 所判断之事的廉价版：一次运行需要的东西
+// 都已经在了吗？
 //
-// It exists so that an ordinary start does not pay for a Node.js process, a dependency check and
-// a walk over 250 MB of art on every launch. It is deliberately generous - one missing piece and
-// the preparation step runs, which re-checks all of it properly and repairs what it finds. The
-// one thing it cannot see is a single missing art file, which is why the menu has
-// 重新准备游戏文件.
+// 它存在的意义，是让普通启动不必每次都为一次 Node.js 进程、一遍依赖检查和一次
+// 250 MB 美术素材的遍历付钱。它故意写得很宽松——缺一样东西，准备这一步就运行，
+// 而它会重新把这一切好好检查一遍，修好发现的问题。它唯一看不见的，是美术素材
+// 少了单独某一个文件，所以菜单里才有 重新准备游戏文件。
 func setupNeeded() bool {
 	for _, name := range []string{
 		filepath.Join("node_modules", "ws", "package.json"),
@@ -217,11 +217,10 @@ func setupNeeded() bool {
 	return false
 }
 
-// fetchSource downloads the repository's archive and unpacks it into the game directory.
+// fetchSource 下载仓库的归档，并把它解包进游戏目录。
 //
-// It is an overlay: files that are there are replaced, files that are not are added. That is what
-// makes an update cheap - node_modules and the downloaded art stay where they are - and it is
-// also why the game directory is never wiped.
+// 这是一次覆盖：已有的文件被替换，没有的文件被加上。更新之所以便宜就是这个缘故——
+// node_modules 和已下载的美术素材留在原地——这也正是游戏目录从不被清空的理由。
 func fetchSource() error {
 	// 先问清这次取的是哪一版，再下归档。顺序是有意的：等归档下完再问，拿到的可能是另一个 commit
 	// 的 hash——master 在这几分钟里动了的话，记下来的就对不上刚解包的那份代码了。
@@ -258,8 +257,8 @@ func fetchSource() error {
 	return nil
 }
 
-// unpackArchive unpacks a .tar.gz into root, overwriting what is there and creating what is not,
-// and answers how many files it wrote.
+// unpackArchive 把一个 .tar.gz 解包进 root，覆盖已有的、创建没有的，并回答它写了
+// 多少个文件。
 func unpackArchive(r io.Reader, root string) (int, error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -300,11 +299,11 @@ func unpackArchive(r io.Reader, root string) (int, error) {
 	return files, nil
 }
 
-// archivePath turns the name of one tar entry into a path under the game directory.
+// archivePath 把一个 tar 项的名字变成游戏目录下的路径。
 //
-// false means "skip": the archive's single top-level folder itself, and anything that would land
-// outside the game directory. A tar carries names as written, so an archive is hostile until every
-// name has been through this - including the one this program fetches.
+// false 表示「跳过」：归档唯一那个顶层文件夹本身，以及任何会落到游戏目录之外的东西。
+// tar 里的名字怎么写就怎么带，所以在每个名字都过这一道之前，归档都是敌意的——
+// 包括本程序取回来的这一份。
 func archivePath(name string) (string, bool) {
 	clean := path.Clean(strings.ReplaceAll(name, "\\", "/"))
 	if clean == "." || clean == ".." || path.IsAbs(clean) || strings.HasPrefix(clean, "../") {
@@ -322,8 +321,8 @@ func archivePath(name string) (string, bool) {
 	return filepath.FromSlash(rel), true
 }
 
-// writeFile writes one entry out. The file is truncated rather than removed and recreated, so an
-// overlay update keeps the timestamps of everything the archive does not carry.
+// writeFile 写出一个项。文件是被截断，而不是删掉重建，所以覆盖式更新能保住归档
+// 没有携带的一切东西的时间戳。
 func writeFile(target string, src io.Reader) error {
 	f, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -336,17 +335,32 @@ func writeFile(target string, src io.Reader) error {
 	return f.Close()
 }
 
-// runSetup is the game's own preparation step: dependencies, the vendored browser libraries, the
-// game data, and - unless they are already there - the art and audio. It is what
-// scripts/start-windows.bat runs before the server, and it is safe to run again: every step
-// checks first, and the asset download resumes where it stopped.
+// runSetup 是游戏自己的准备步骤：依赖、随仓库带的浏览器库、游戏数据，以及——如果还
+// 没有的话——美术素材和音频。scripts/start-windows.bat 在服务器之前跑的就是它，而且
+// 再跑一次是安全的：每一步都先检查，素材下载也会从停下的地方继续。
 func runSetup(node string) error {
+	// --no-local：从已安装的明日方舟客户端做可选提取时会问一个问题，而本程序没有终端
+	// 来回答它。提取本地客户端素材 那一项走的是同一条路，只是把这两个开关换掉
+	// （见 runSetupStep）。
+	if err := runSetupStep(node, "the game is prepared", setupWait, "--quiet", "--no-local"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runSetupStep 带着给定的开关运行游戏自己的准备脚本，并把它的输出交给日志——准备页面
+// 那个输出框读的就是日志。
+//
+// 它被两处用：准备游戏（--quiet --no-local），以及可选的本地客户端提取（--quiet --local）。
+// 两处的差别只有开关与时限，所以执行、超时、杀进程树这几件事只有一份。
+//
+// wait 是"卡住不动"的上限，不是一个预算：它到了就杀整棵进程树，转成错误交回调用方。done 只是
+// 日志里的那句话（"the game is prepared" / "本地客户端素材提取完成"）。
+func runSetupStep(node, done string, wait time.Duration, flags ...string) error {
 	script := filepath.Join(gameDir(), "tools", "setup.mjs")
-	// --no-local: the optional extraction from an installed Arknights client asks a question, and
-	// this program has no terminal to answer it on.
-	cmd := gameCommand(node, script, "--quiet", "--no-local")
+	cmd := gameCommand(node, append([]string{script}, flags...)...)
 	cmd.Stdout, cmd.Stderr = gameWriter{"setup"}, gameWriter{"setup"}
-	slog.Info("preparing the game", "script", script)
+	slog.Info("running the game's setup script", "script", script, "flags", strings.Join(flags, " "))
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -357,28 +371,27 @@ func runSetup(node string) error {
 		if err != nil {
 			return err
 		}
-		slog.Info("the game is prepared")
+		slog.Info(done)
 		return nil
-	case <-time.After(setupWait):
-		// 一条卡住不动的下载不该把窗口永远留在「正在准备」那一页上。
+	case <-time.After(wait):
+		// 一条卡住不动的下载不该把窗口永远留在那一页上。
 		killTree(cmd.Process.Pid)
-		return fmt.Errorf("准备步骤超过 %s 没有结束", setupWait)
+		return fmt.Errorf("这一步超过 %s 没有结束", wait)
 	}
 }
 
-// The server this program started, if it started one. Nothing else may be killed, and a server
-// the user already had running is not ours to stop.
+// 本程序启动的那个服务器，如果它启动了一个的话。别的都不能被杀，而用户本来就在跑的
+// 服务器也轮不到我们来停。
 var (
 	gameCmd    *exec.Cmd
 	gameIsOurs bool
 
-	// gameDone is closed when that process ends, so that waiting for /healthz can give up as soon
-	// as the server has died rather than sitting out the whole timeout.
+	// 那个进程结束时 gameDone 被关闭，好让等待 /healthz 能在服务器一死掉时就放弃，
+	// 而不是把整个超时坐穿。
 	gameDone chan struct{}
 )
 
-// startGame starts the server. It returns as soon as the process is up; whether it stays up is
-// what waitHealthy answers.
+// startGame 启动服务器。进程一起来它就返回；它能不能稳住，是 waitHealthy 回答的事。
 func startGame(node string) error {
 	cmd := gameCommand(node, filepath.Join(gameDir(), "server", "index.js"))
 	cmd.Env = append(cmd.Env, "PORT="+gamePort, "HOST="+gameBind)
@@ -398,8 +411,8 @@ func startGame(node string) error {
 	return nil
 }
 
-// waitHealthy waits for /healthz to answer, and gives up early when the server has already
-// exited - which is what taking 3000 does: the server prints EADDRINUSE and quits.
+// waitHealthy 等待 /healthz 回应，并在服务器已经退出时提前放弃——3000 被占时
+// 就是这样：服务器打印 EADDRINUSE 然后退出。
 func waitHealthy(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -416,9 +429,9 @@ func waitHealthy(timeout time.Duration) bool {
 	return false
 }
 
-// drop removes a file or a directory, and treats "it was not there" as success - which is what
-// os.RemoveAll already does for a missing path. It exists so that the two deletions in updateGame
-// read the same and report a real failure the same way.
+// drop 删除一个文件或目录，并把「它本来就不在」当成成功——os.RemoveAll 对不存在的
+// 路径本来就如此。它存在的意义，是让 updateGame 里那两处删除读起来一样，报真失败
+// 的方式也一样。
 func drop(path string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -426,20 +439,19 @@ func drop(path string) error {
 	return nil
 }
 
-// prepareLockPath is the file two copies of this program take turns on while they write into the
-// game directory.
+// prepareLockPath 是本程序的两份在往游戏目录里写时轮流占据的那个文件。
 func prepareLockPath() string { return filepath.Join(appDataDir(), "prepare.lock") }
 
-// lockFile takes the exclusive byte-range lock on path, and answers a function that lets it go.
+// lockFile 在 path 上取独占的字节范围锁，并交回一个函数用来放开它。
 //
-// A file lock rather than a named mutex or a semaphore. A Windows mutex belongs to the *thread* that
-// took it, and Go moves goroutines between threads underneath - releasing it from another one fails
-// with ERROR_NOT_OWNER. A file lock belongs to the *handle*, so one goroutine may take it and another
-// may let it go; and the system drops it when the process ends, so a copy killed in the middle of a
-// download leaves nothing stuck behind.
+// 用文件锁，而不是具名 mutex 或信号量。Windows 的 mutex 属于取它的那个**线程**，而
+// Go 会在底下把 goroutine 在线程之间搬来搬去——从另一个线程释放它会失败，报
+// ERROR_NOT_OWNER。文件锁属于**句柄**，所以一个 goroutine 可以取它，另一个可以放开
+// 它；而且进程结束时系统会把它丢掉，所以一次下载中途被杀掉的副本不会留下任何卡住
+// 的东西。
 //
-// Waiting is bounded by setupWait: the copy that waits here is waiting for a 250 MB download it
-// would otherwise be doing itself, so the ceiling is the same one that download gets.
+// 等待以 setupWait 为界：在这里等的副本，等的是它本来自己也要做的一次 250 MB 下载，
+// 所以这个天花板和那次下载得到的是同一个。
 func lockFile(path string) (func(), error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
@@ -474,13 +486,12 @@ func lockFile(path string) (func(), error) {
 	}, nil
 }
 
-// prepareFiles makes the game directory ready to run, and answers the page to show when it cannot.
+// prepareFiles 把游戏目录弄成可以运行的样子，弄不成时回答该显示哪一页。
 //
-// Everything in here writes into game\: the archive is unpacked over it, npm ci rewrites
-// node_modules inside it, fetch-assets refills public/. Two copies doing that at the same time
-// corrupt each other - npm ci is the obvious one, but the unpacking truncates and rewrites every
-// file it carries as well - so this is the one part of a run that takes turns. Running two copies is
-// still the point; they only queue here, and the one that waited usually finds the work already done.
+// 这里面的一切都往 game\ 里写：归档解包到它上面，npm ci 重写它里面的 node_modules，
+// fetch-assets 补满 public/。两份同时这么做会互相弄坏——npm ci 是最明显的那个，
+// 但解包同样会截断并重写它携带的每一个文件——所以这是整个运行里唯一要轮流的部分。
+// 跑两份仍然是重点；它们只是在这里排队，而等过的那一份通常发现活儿已经干完了。
 func prepareFiles(node string, forceSetup bool) string {
 	release, err := lockFile(prepareLockPath())
 	if err != nil {
@@ -513,23 +524,21 @@ func prepareFiles(node string, forceSetup bool) string {
 	return ""
 }
 
-// updateGame fetches the newest source over what is there, and clears what has to be rebuilt so
-// that the preparation which follows really does follow.
+// updateGame 把最新的源码取下来盖过现有的，并清掉必须重建的东西，好让接下来的准备
+// 步骤真的会跟着做。
 //
-// This is the one part of 更新游戏 the game's own scripts cannot do. tools/setup.mjs checks what is
-// *derived* - node_modules, public/vendor, data, assets - and has no idea whether the code itself
-// changed. Upstream's answer is a `git pull`, which fetchSource stands in for; there is no git here,
-// and deliberately so, because a launcher that needs git is a launcher that fails on a machine that
-// only has Node.js.
+// 这是 更新游戏 里游戏自己的脚本做不了的那一部分。tools/setup.mjs 检查的是**派生**
+// 出来的东西——node_modules、public/vendor、data、assets——它并不知道代码本身有没有
+// 变。上游的答案是 `git pull`，fetchSource 顶替的就是它；这里没有 git，而且是故意的，
+// 因为一个要求装好 git 的启动器，是一台只有 Node.js 的机器上会失败的启动器。
 //
-// Two things are removed, and each is a switch inside somebody else's script:
+// 有两样东西会被删掉，而每一样都是别人脚本里的一个开关：
 //
-//   - node_modules. setup.mjs runs npm ci only when a package's directory is *missing*, and that
-//     test cannot see a version change: after an update, three@0.186 would satisfy it while the new
-//     code wants 0.190. Removing the tree is the only thing that makes it run.
-//   - the two upstream index tables. assets/cache.mjs downloads them when they are missing and
-//     otherwise reuses them for ever, so a stale audio_data.json means the new version's operators
-//     never enter the asset manifest at all.
+//   - node_modules。setup.mjs 只在某个包的目录**缺失**时才跑 npm ci，而这个测试看不见
+//     版本变化：更新之后，three@0.186 就能满足它，可新代码要的是 0.190。删掉整棵树
+//     是唯一能让它跑起来的办法。
+//   - 两张上游索引表。assets/cache.mjs 在它们缺失时下载，否则就永远沿用旧的，所以
+//     一份过期的 audio_data.json 意味着新版本的干员根本进不了素材清单。
 func updateGame() error {
 	// 更新也写 game\，所以和准备步骤共用同一把锁。
 	release, err := lockFile(prepareLockPath())
@@ -557,7 +566,7 @@ func updateGame() error {
 	return nil
 }
 
-// recordRevision writes down which commit the source on disk came from.
+// recordRevision 记下磁盘上的源码来自哪个 commit。
 //
 // 它答的是"这份代码是哪一版"，而本机没有任何 git 元数据可读（源码是 tar.gz 解包的），所以只能问
 // 上游要当前那个 commit。它因此有一处诚实的局限，写在日志里而不写在标题栏上：源码如果能重新取，
@@ -597,12 +606,11 @@ func gameVersionNote() string {
 	return pkg.Version
 }
 
-// prepareGame brings the game up, and reports what the window should say when it cannot. An empty
-// answer means the server is answering and the window can be pointed at it.
+// prepareGame 把游戏带起来，并在带不起来时报告窗口该说什么。空答案意味着服务器正在
+// 应答，窗口可以指向它了。
 //
-// forceSetup runs the preparation step even when nothing looks missing. That is what the menu
-// item 重新准备游戏文件 asks for - the asset download is the one thing setupNeeded cannot see the
-// state of.
+// forceSetup 让准备步骤即使看起来什么都不缺也照跑。菜单项 重新准备游戏文件 要的就是
+// 这个——素材下载是 setupNeeded 唯一看不透状态的东西。
 func prepareGame(forceSetup bool) string {
 	// 端口上已经有游戏在回应就直接开它，不再起第二个——联机要的是同一个后端，多起一个反而是
 	// 另一局。这也是双击第二次会看见同一局的原因。
@@ -635,19 +643,18 @@ func prepareGame(forceSetup bool) string {
 	return ""
 }
 
-// gameJob holds the server this run started. Its one rule is
-// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: when the last handle to the job closes - which happens when
-// this process ends, by any means at all, a crash and a kill from the Task Manager included -
-// Windows ends every process in it.
+// gameJob 装住本次运行启动的那个服务器。它唯一的一条规则是
+// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE：当指向该 job 的最后一个句柄关闭时——本进程以任何
+// 方式结束时都会这样，崩溃和从任务管理器里结束也算——Windows 会结束它里面的每一个
+// 进程。
 //
-// This is what keeps a crash from leaving a server behind. An orphaned server keeps answering on
-// the port, and the next run then finds it taken, starts nothing, and waits for something that
-// will never happen.
+// 这就是崩溃不会留下一个服务器在后面跑的原因。一个成了孤儿的服务器会继续在端口上
+// 应答，下一次运行于是发现端口被占，什么都不启动，然后等一件永远不会发生的事。
 var gameJob windows.Handle
 
-// containGame puts a started server under that job. Failure is logged and survived: the graceful
-// path still stops the server, and a process that is already in a job this process may not modify
-// refuses the assignment.
+// containGame 把一个已启动的服务器放进那个 job。失败会被记进日志然后放过去：优雅
+// 路径仍然会停掉服务器，而一个已经在这个进程无权修改的 job 里的进程，会拒绝这次
+// 指派。
 func containGame(pid int) {
 	if gameJob == 0 {
 		h, err := windows.CreateJobObject(nil, nil)
@@ -678,7 +685,7 @@ func containGame(pid int) {
 	slog.Info("the server is in the job: it ends when this program does", "pid", pid)
 }
 
-// stopGame ends the server, but only if this program started it.
+// stopGame 结束服务器，但只有在本程序启动过它时才动手。
 func stopGame() {
 	if !gameIsOurs || gameCmd == nil || gameCmd.Process == nil {
 		return
@@ -707,7 +714,7 @@ func stopGame() {
 	killTree(pid)
 }
 
-// killTree ends a process and everything it started.
+// killTree 结束一个进程以及它启动的一切。
 func killTree(pid int) {
 	done := hiddenCommand("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
 	done.Stdout, done.Stderr = io.Discard, io.Discard

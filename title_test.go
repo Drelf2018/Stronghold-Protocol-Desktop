@@ -40,7 +40,7 @@ func TestWindowTitle(t *testing.T) {
 			local:  local,
 			remote: other,
 			known:  true,
-			want:   appName + " - " + shortL + " - 检测到新版本 " + shortO,
+			want:   appName + " - " + shortL + " - 检测到新版本 " + shortO + " （可在托盘菜单中更新）",
 		},
 		{
 			// 问到了，但那次问到的正是"空"（理论上不该发生）：也不该说新版。

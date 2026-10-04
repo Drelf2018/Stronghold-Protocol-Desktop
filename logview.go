@@ -33,30 +33,58 @@ const (
 	logTick = 150 * time.Millisecond
 )
 
+// 等级只在测试里按名字出现：正式那一路用的是 slog 自己的写法（entry.Level 直接来自
+// r.Level.String()），这里不留一份副本——多一份副本就多一个会跟它不一致的地方。
+//
+// var 而不是 const：String() 是个方法调用，常量装不下它的结果。
+var (
+	levelInfo  = slog.LevelInfo.String()
+	levelError = slog.LevelError.String()
+)
+
+// entry 是缓冲里的一行：内容，加上它是哪一级写下来的。
+//
+// 等级是给页面用的——那块区域把 INFO 与 ERROR 分开着色，读的人一眼知道哪几行是坏消息。字段名
+// 都短：这一段每 150 毫秒要序列化一次，量不大，但没有理由写长。
+type entry struct {
+	// Level 用的是 slog 自己的写法（"INFO"、"ERROR"……）。序列化时**总是**带上它——页面上
+	// 那一行是否着色要看它，所以不能因为"跟上一行一样"就省掉。
+	Level string `json:"l"`
+	Text  string `json:"t"`
+}
+
 // logStore 是日志行的环形缓冲，也是写日志的人与页面之间唯一的接口。
 //
 // 它在窗口之前就存在：窗口还没建好时写下的记录也在里面，等页面来取。
 type logStore struct {
 	mu      sync.Mutex
-	lines   []string
+	lines   []entry
 	dropped uint64 // 被挤掉的旧行数：序号要能一路往上走，才说得清"读到哪儿了"
 	limit   int
 }
 
 func newLogStore(limit int) *logStore {
-	return &logStore{lines: make([]string, 0, 256), limit: limit}
+	return &logStore{lines: make([]entry, 0, 256), limit: limit}
 }
 
-// append 把一段文本按行拆开收下：子进程的输出是按块读进来的，一块里常常有好几个换行。
+// append 收下一段不带等级的文本，按 info 算——子进程的输出没有等级可言。
 func (s *logStore) append(text string) {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
+	s.appendEntry(entry{Level: slog.LevelInfo.String(), Text: text})
+}
+
+// appendEntry 把一段文本按行拆开收下：子进程的输出是按块读进来的，一块里常常有好几个换行，
+// 而那些换行都是同一级写下来的东西，所以等级跟着这一段走，拆出来的每一行都带上它。
+func (s *logStore) appendEntry(e entry) {
+	text := strings.ReplaceAll(e.Text, "\r\n", "\n")
 	text = strings.TrimRight(text, "\n")
 	if text == "" {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lines = append(s.lines, strings.Split(text, "\n")...)
+	for _, line := range strings.Split(text, "\n") {
+		s.lines = append(s.lines, entry{Level: e.Level, Text: line})
+	}
 	if over := len(s.lines) - s.limit; over > 0 {
 		s.lines = append(s.lines[:0:0], s.lines[over:]...)
 		s.dropped += uint64(over)
@@ -74,7 +102,7 @@ func (s *logStore) count() uint64 {
 //
 // at 落在已经被挤掉的那一段里时，从最早还留着的那行开始——跟不上就尽量给新的，而不是报错或者
 // 给空。at 超过总数（缓冲清过、页面还记着旧序号）时给空。
-func (s *logStore) since(at uint64) ([]string, uint64) {
+func (s *logStore) since(at uint64) ([]entry, uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	total := s.dropped + uint64(len(s.lines))
@@ -87,11 +115,24 @@ func (s *logStore) since(at uint64) ([]string, uint64) {
 	return s.lines[at-s.dropped:], total
 }
 
+// textsSince 是 since 的文本那半边：只要内容的人（测试、以后可能的导出）不必知道 entry 长什么样。
+func (s *logStore) textsSince(at uint64) ([]string, uint64) {
+	entries, total := s.since(at)
+	texts := make([]string, len(entries))
+	for i, e := range entries {
+		texts[i] = e.Text
+	}
+	return texts, total
+}
+
 // logBuffer 是这一个进程唯一的那份日志缓冲。
 var logBuffer = newLogStore(logLineLimit)
 
-// logLine 往缓冲里写一行。日志的 handler 就从这个口进来，所以行只有一种写法。
-func logLine(text string) { logBuffer.append(text) }
+// logLineAt 往缓冲里写一行。日志的 handler 就从这个口进来，所以行只有一种写法，而它带着等级：
+// 一条记录写下的几行都该是同一级。
+func logLineAt(level slog.Level, text string) {
+	logBuffer.appendEntry(entry{Level: level.String(), Text: text})
+}
 
 // logSink 是日志的第二条出口：一条记录落进文件之后，同一份内容也进缓冲。
 //
@@ -109,10 +150,10 @@ func (h *logSink) Enabled(ctx context.Context, level slog.Level) bool {
 // 只是它的一层窗——这一步万一出意外，也不该影响到文件里那行。
 func (h *logSink) Handle(ctx context.Context, r slog.Record) error {
 	err := h.base.Handle(ctx, r)
-	logLine(describeRecord(r))
+	logLineAt(r.Level, describeRecord(r))
 	if err != nil {
-		// 文件那一路的报错不会进记录，可它正是最该出现在屏幕上的一行。
-		logLine("[" + err.Error() + "]")
+		// 文件那一路的报错不会进记录，可它正是最该出现在屏幕上的一行——而且是最该被看见的那一级。
+		logLineAt(slog.LevelError, "["+err.Error()+"]")
 	}
 	return err
 }
@@ -137,6 +178,10 @@ func installLogSink(base slog.Handler) func() {
 }
 
 // describeRecord 把一条记录写成页面上的一行：消息，后面按 slog 自己的写法接上它的字段。
+//
+// 等级**不拼进这行文本**。这里先前有一个空 switch，注释写着"绿色 [INFO] 前缀"，而那个前缀做
+// 不到——这段文本最终是用 createTextNode 放进页面的，颜色是 CSS 的事，文字里写不出颜色来。
+// 等级因此走数据：它跟着 entry.Level 到页面，由那边的画笔取一个类名。
 func describeRecord(r slog.Record) string {
 	var b strings.Builder
 	b.WriteString(r.Message)
