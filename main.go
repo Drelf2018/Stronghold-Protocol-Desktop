@@ -25,7 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/Drelf2018/Stronghold-Protocol-Desktop/internal/artwork"
+	"github.com/Drelf2018/Stronghold-Protocol-Launcher/internal/artwork"
 	"github.com/Drelf2018/systray"
 	"golang.org/x/sys/windows"
 )

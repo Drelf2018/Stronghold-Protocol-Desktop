@@ -13,7 +13,7 @@ import (
 
 	ico "github.com/biessek/golang-ico"
 
-	"github.com/Drelf2018/Stronghold-Protocol-Desktop/internal/artwork"
+	"github.com/Drelf2018/Stronghold-Protocol-Launcher/internal/artwork"
 )
 
 func TestMultiSizeICO(t *testing.T) {

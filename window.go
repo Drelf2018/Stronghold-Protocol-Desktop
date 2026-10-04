@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/Drelf2018/Stronghold-Protocol-Desktop/internal/artwork"
+	"github.com/Drelf2018/Stronghold-Protocol-Launcher/internal/artwork"
 	webview2 "github.com/jchv/go-webview2"
 	"golang.org/x/sys/windows"
 )

@@ -20,7 +20,7 @@ import (
 	"github.com/akavel/rsrc/rsrc"
 	ico "github.com/biessek/golang-ico"
 
-	"github.com/Drelf2018/Stronghold-Protocol-Desktop/internal/artwork"
+	"github.com/Drelf2018/Stronghold-Protocol-Launcher/internal/artwork"
 )
 
 // sysoName is the name the toolchain looks for.

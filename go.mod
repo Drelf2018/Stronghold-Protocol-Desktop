@@ -1,4 +1,4 @@
-module github.com/Drelf2018/Stronghold-Protocol-Desktop
+module github.com/Drelf2018/Stronghold-Protocol-Launcher
 
 go 1.27.0
 

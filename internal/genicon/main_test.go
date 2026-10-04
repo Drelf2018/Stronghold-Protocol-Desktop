@@ -16,7 +16,7 @@ import (
 
 	"github.com/akavel/rsrc/rsrc"
 
-	"github.com/Drelf2018/Stronghold-Protocol-Desktop/internal/artwork"
+	"github.com/Drelf2018/Stronghold-Protocol-Launcher/internal/artwork"
 )
 
 func TestEmbedIcon(t *testing.T) {
