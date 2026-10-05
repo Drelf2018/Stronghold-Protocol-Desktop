@@ -35,6 +35,10 @@ const (
 	// 部分主机出去的代理。
 	upstreamFeed = "https://github.com/sganggs/Stronghold-Protocol/commits/master.atom"
 
+	// upstreamRepo 是同一个仓库给人看的那一面。上面两个是机器问它的两个入口（API 与 atom feed），
+	// 而菜单里那个「打开仓库」要的是一个能读的页面。
+	upstreamRepo = "https://github.com/sganggs/Stronghold-Protocol"
+
 	// upstreamWait 是这一问的上限。它是一次给标题栏看的顺路检查：网络慢不该拖住任何东西，而一个
 	// 来迟了的答案一文不值。
 	upstreamWait = 10 * time.Second

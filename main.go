@@ -734,8 +734,9 @@ func addMenuItems() {
 		}
 	}()
 
-	// 开机自启动紧随显示窗口。它是这张菜单里唯一的状态（勾选框），摆在最上面，勾没勾一
-	// 就看得见，不必为了确认这一点把菜单读到底	//
+	// 开机自启动紧随显示窗口。它是这张菜单里唯一的状态（勾选框），摆在最上面，勾没勾
+	// 一眼就看得见，不必为了确认这一点把菜单读到底。
+	//
 	// 勾的是注册表里的真实状态，不是记在内存里的意图：setAutostart 写完之后会再读一次，
 	// 写不进去（策略、权限）时勾就上不去，用户一眼能看出来没生效
 	mStartup := systray.AddMenuItemCheckbox("开机自启动", "登录时自动运行本程序", autostartEnabled())
@@ -752,6 +753,32 @@ func addMenuItems() {
 	// 窗口那几项（置顶 / 居中 / 刷新 / 恢复参数尺寸）和三组尺寸参数搬到了窗口自己的
 	// 菜单里（右键标题栏、Alt+空格，见 sysmenu.go）：它们调的就是这个窗口，跟托盘没关系
 	// 窗口的事跟着窗口走，托盘只留这个程序自己的事
+	systray.AddSeparator()
+
+	// 加入与在浏览器打开这一对是从「更多」搬上来的：它们说的是游戏**本身**（换一台机器接着玩、
+	// 或者绕过这个窗口直接开），而「更多」里留下的那几件事都会动磁盘上的文件。两条分隔线把这一组
+	// 从上面那个勾和下面那些子菜单之间夹出来。
+	//
+	// 加入这一项回到网页原来那套「改地址」的做法：问题在页面里问（Go 这边没有控制台，消息框也
+	// 不回一行字），答案由 _join 绑定回来（见 setURL 与 js/askForRoom.js）。输入进去的可以是完整
+	// 的加入链接、主机名，或者光秃秃的 4 位密钥——怎么补全由 joinURL 决定
+	mJoin := systray.AddMenuItem("输入加入链接", "粘贴朋友发来的加入链接，或直接输入 4 位同盟密钥")
+	go func() {
+		for range mJoin.ClickedCh {
+			// 先把窗口叫出来，再把脚本交给窗口的线程：Eval 最终落在 WebView2 controller 的调用上，
+			// 那不是菜单 goroutine 该碰的东西
+			win.Show()
+			win.Dispatch(win.w.Eval, askForRoomJS+"askForRoom("+fmt.Sprintf("%q", url())+");")
+		}
+	}()
+
+	mBrowser := systray.AddMenuItem("在浏览器中打开", "用系统默认浏览器打开游戏地址")
+	go func() {
+		for range mBrowser.ClickedCh {
+			shellOpen(gameAddress)
+		}
+	}()
+
 	systray.AddSeparator()
 
 	mOpen := systray.AddMenuItem("打开", "打开文件或目录")
@@ -800,23 +827,12 @@ func addMenuItems() {
 		}
 	}()
 
-	// 加入这一项回到网页原来那套「改地址」的做法：问题在页面里问（Go 这边没有控制台，消息框也
-	// 不回一行字），答案_join 绑定回来（见 setURL js/askForRoom.js）。输入的可以是完整的加入
-	// 链接、主机名，或者光秃秃的 4 位密钥——怎么补全由 joinURL 决定
-	mJoin := mMore.AddSubMenuItem("输入加入链接", "粘贴朋友发来的加入链接，或直接输入 4 位同盟密钥")
+	// 「打开项目仓库」就在取源码那一项旁边：更新是从这个仓库取的，而这一项是去**读**它——想知道这一版
+	// 里有什么、或者要报个问题，都是从这里走。它开的是游戏那一份源码的仓库，不是本程序自己的。
+	mRepo := mMore.AddSubMenuItem("打开项目仓库", "在浏览器里打开游戏源码所在的仓库")
 	go func() {
-		for range mJoin.ClickedCh {
-			// 先把窗口叫出来，再把脚本交给窗口的线程：Eval 最终落在 WebView2 controller 的调用上，
-			// 那不是菜单 goroutine 该碰的东西
-			win.Show()
-			win.Dispatch(win.w.Eval, askForRoomJS+"askForRoom("+fmt.Sprintf("%q", url())+");")
-		}
-	}()
-
-	mBrowser := mMore.AddSubMenuItem("在浏览器中打开", "用系统默认浏览器打开游戏地址")
-	go func() {
-		for range mBrowser.ClickedCh {
-			shellOpen(gameAddress)
+		for range mRepo.ClickedCh {
+			shellOpen(upstreamRepo)
 		}
 	}()
 
