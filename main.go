@@ -252,6 +252,22 @@ var (
 	upstreamKnown atomic.Bool
 )
 
+// adoptRevision 把标题栏换成「磁盘上那份源码现在是这个 commit」。
+//
+// 本机那一半是**启动时**读的（见 main 里那两次 Store），而取回新源码会把它换掉。不刷新的话，标题
+// 会一直显示旧的那个 hash；又因为上游那一半没动，它还会指着一个刚被装上的 commit 说「检测到新
+// 版本」——屏幕上没有任何东西会说这是错的。
+//
+// 上游那一半在这里**作废**，而不是换成这个 hash：它答的是启动时（也就是换源码之前）上游在哪，
+// 现在不作数了。作废而不是猜，是因为「不知道」在这行标题里有专门的一句话（只写本机那一半），
+// 而拿旧答案硬说「有新版本」，指的很可能就是刚刚装上的那个 commit。调用方接着会重新问一次。
+func adoptRevision(hash string) {
+	localRevisionHash.Store(hash)
+	upstreamRevisionID.Store("")
+	upstreamKnown.Store(false)
+	applyTitle()
+}
+
 // applyTitle 用那两个 hash 写出窗口标题。
 //
 //	卫戍协议：盟约 - bdb0765
@@ -301,7 +317,7 @@ func windowTitle(local, remote string, known bool) string {
 // 它在自己的 goroutine 里跑（由 main 起）：那是一次网络请求，而窗口已经该出来了。查不到就什么都
 // 不说——一次失败的请求不是一个 commit，不该让标题栏宣称检测到新版本。
 //
-// 这一问每次启动只做一次（由 main 在第一次准备游戏走完之后起）。它不是一个更新器：知道了也不动
+// 这一问每次启动只做一次，更新游戏取回新源码之后再问一次（由 main 起）。它不是一个更新器：知道了也不动
 // 任何文件，只是让标题栏说一句实话——上游的代码只有「更新游戏」被按下时才会真的被取回来。
 func startupCheck() {
 	hash, err := upstreamRevision()
@@ -367,9 +383,20 @@ func reprepare(update bool) {
 		page := prepareGame(true)
 		if page != "" {
 			showNotice(page)
-		} else {
-			showGame()
+			return
 		}
+		// 游戏起来了——标题栏这时候才换。
+		//
+		// 源码在 updateGame 那一步就换了，可那会儿屏幕上还是准备页，游戏也还没起来：先报一个新 hash，
+		// 等于替一个还没跑起来的版本说话。换标题与切回主界面是同一件事的两个动作，所以一起做。
+		//
+		// 准备没成时不换（上面那条 return）：那会儿该说的是「游戏文件没有准备完」，而本机那一半会在
+		// 下一次启动时照常从磁盘上读回来。
+		if update {
+			adoptRevision(localRevision())
+			go startupCheck()
+		}
+		showGame()
 	}()
 }
 
